@@ -1,0 +1,181 @@
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Lab Notebook: Seer Proteograph XT Benchmark
+
+Author: Sophia Soriano          Mentors/Collaborators: Matthew Chang, Mark Flory, Jessie May Cartier, OHSU CEDAR
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Project Overview:
+
+Comparison of new XT version of the Seer Proteograph with 2NP (A+B) to the previous 5NP Seer Proteograph. Two sets of samples will be compared - Murine liver and Human PC3. A series of low volume samples will also be compared to standard volume (250µL,125µL,100µL,50µL,25µL,10µL).
+
+Online Links to Info/Data:
+
+Murine OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_layouts/15/onedrive.aspx?remoteItem=%7B%22mp%22%3A%7B%22webAbsoluteUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%22%2C%22listFullUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%2FDocuments%22%2C%22rootFolder%22%3A%22%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%2FDocuments%2F20240207%5FMurine%5FLiver%5FExpl%5FPlasma%22%7D%2C%22rsf%22%3A%7B%22listId%22%3A%222d374a3c%2Df27b%2D4379%2D8d9b%2Db3c67df34604%22%2C%22siteUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fchangma%5Fohsu%5Fedu%22%2C%22uniqueId%22%3A%2295acc234%2Dd287%2D4fc5%2Db485%2D142be85351e4%22%7D%7D&view=0
+
+Human OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_layouts/15/onedrive.aspx?remoteItem=%7B%22mp%22%3A%7B%22webAbsoluteUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%22%2C%22listFullUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%2FDocuments%22%2C%22rootFolder%22%3A%22%2Fpersonal%2Fsorianos%5Fohsu%5Fedu%2FDocuments%2FSeer%5FLM%5FDE%22%7D%2C%22rsf%22%3A%7B%22listId%22%3A%222d374a3c%2Df27b%2D4379%2D8d9b%2Db3c67df34604%22%2C%22siteUrl%22%3A%22https%3A%2F%2Fohsuitg%2Dmy%2Esharepoint%2Ecom%2Fpersonal%2Fchangma%5Fohsu%5Fedu%22%2C%22uniqueId%22%3A%22dadb3ccb%2Db5a4%2D431c%2D9c14%2Db1dd30ad8017%22%7D%7D&view=0
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+16FEB2024 - Matt's Project Intro
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Murine Liver Expl Plasma
+* XT Proteograph kit - 2 NP, A+B
+  * New elution setup from Seer
+    ** 250µL (old - "neat")
+    ** 125µL
+    ** 100µL
+    ** 50µL
+    ** 25µL
+    ** 10µL
+  * Replicates A, B, C - right after volume amt in filename
+  * So 6 injections/samples per volume
+  * DC, MPE, PC1, PC2 are controls
+* PC3 - Human Plasma Sample
+  ** Old kit (5NP) vs. XT (2NP)
+* Main comparisons:
+  ** new to old Seer method
+  ** dilutions form 250µL
+* Data in PAS
+  ** Requires plate map file (well loc, etc.)
+  ** MS file name col needs to be filled out - need to match the PAS file names
+* Create numeric column for volume - 10-"neat" 250
+* Need to create script to load MS file names and match to sample names in plate file
+  ** Order file names in well-column order - Matt's preference
+  ** Matching based on file names to sample names is less preferred because the names can change
+* Need to add file names - can do manually for now since sample list is small
+  ** But a script in R or python that could be used for any Proteograph XT files would be great
+* Build a old plate map file for "old" PC3, separate from "new" PC3 plate map file
+* 2 searches - 1 murine, 1 human (PC3)
+* Matt to share folder for project - plate map file only item currently
+  ** Seer script for Orion project
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+21FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Trying to figure out user input from R and from command line:
+  ** For R console: https://www.geeksforgeeks.org/taking-input-from-user-in-r-programming/
+  ** For Cmd line: https://stackoverflow.com/questions/70521543/how-to-get-a-user-input-in-command-prompt-and-pass-it-to-r
+* Looking in to R methods of creating list of MS filenames
+  ** https://www.geeksforgeeks.org/read-all-files-in-directory-using-r/
+* Ways to write an excel file:
+  ** https://stackoverflow.com/questions/19414605/export-data-from-r-to-excel
+* Can't seem to figure out how to extract the NP info from the MS file names without grepping
+  ** https://tidyr.tidyverse.org/reference/separate_wider_delim.html
+  ** https://r4ds.hadley.nz/strings.html#extracting-data-from-strings
+  ** This new separate method seems to have worked, but is kinda clunky...
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+22FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Create new set of test MS files w/ NP A+B format
+  ** Folder is organized by Sample, then NP
+  ** i.e. S1_NPA, S1_NPB, S2_NPA, S2_NPB)
+* On load into plate map R script, MS files should be re-ordered:
+  ** i.e. S1_NPA, S2_NPA, S1_NPB, S2_NPB
+* Matt provided a list of filenames for this plate map file
+  ** Contains some MS files that are not in the plate map file - need to add filtering script aspect
+* Using regex to do this filtering - as long as the format of the MS file names remain the same, this should work for any MS file
+  ** ex. 20240207_Murine_10uLA_NPA_BA6_1_6773.d
+  ** The "_" locations and number of characters between each are important
+  ** https://stackoverflow.com/questions/38923549/extract-just-the-part-of-string-that-matches-a-regex-pattern-in-r
+  ** Suppressing as.numeric() Volume warning: https://www.statology.org/nas-introduced-by-coercion-in-r/
+* Code appears to work for this new XT project
+  ** Should test on an old 5NP project as well - no reason why this code won't work in theory?
+* Realized I wasn't adding the blank wells back in - fixed that and uploaded script to a new github repo for data processing scripts
+* Emailed results (filled out plate map and R script) to Matt
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+23FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Used plate map to start PAS DIA-NN searches
+  ** Murine w/ MBR off since PAS was not feeling like creating a new analysis protocol today - Matt to ask Nick @ Seer about
+  ** Human w/ MBR on (2 PC3 XT samples)
+  ** Human w/ MBR on (5 PC3 Gen1 samples)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+26FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* See Matt's email from over the weekend - advice on analysis focus/data
+  ** Uploaded the search results into the shared folder under ‘Data’. I spoke with Nick and was able to get the issues with PAS figured out. In ‘Data’ there are 4 folders:
+    *** The murine one which was searched library-free with MBR on
+    *** ‘PC3_Gen1_SpLib’ is PC3 plasma using the old Proteograph 5-NP kit, searched with Seer’s new spectral library built off of Astral data.
+    *** For PC3 with the new XT kit, I generated 3 different search outputs:
+      **** ‘PC3_XT_SpLib’ is searched with new Astral library.
+      **** ‘PC3_XT_timsLib’ is searched with an older spectral library from a timsTOF.
+      **** ‘PC3_XT_libfree’ is searched in library-free mode with MBR on.
+  ** So for the PC3 comparisons, I would prioritize:
+    *** Mouse dilution data should be the top priority
+    *** ‘PC3_Gen1_SpLib’ vs ‘PC3_XT_SpLib’ (compares the old and new Proteograph kit)
+    *** ‘PC3_XT_SpLib’ vs ‘PC3_XT_timsLib’ vs ‘PC3_XT_libfree’ (compares three different search methods from MS data from the new kit)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+27FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Created XT_Comparison.Rmd for this project
+* Loaded all data files - see above: 1 murine, 5 human
+* Starting w/ murine data file:
+  ** Borrowed DIANN filter code from SB_RawSeerDataProcessing.Rmd
+  ** Borrowed flat 50% SF code from Seer_HumanCC_WiT.R (was commented out there)
+    *** grouping only by feature (across samples) - no volume/replicate grouping
+  ** Borrowed Dilution box plot and WiT code from SomaLogic_Benchmark_v6.Rmd
+    *** There are a not-insignificant number of rows (features) with a NULL value for at least one of the volume columns
+    *** How to handle for Wilcox - remove rows? Impute zeros? Impute row mean? Maybe ask Matt...
+    *** Set up ANOVA...maybe that's faster? and can handle NAs....
+      **** https://r-graph-gallery.com/84-tukey-test.html
+      **** https://stackoverflow.com/questions/44712185/tukeys-post-hoc-on-ggplot-boxplot
+      **** https://arc.lib.montana.edu/book/statistics-with-r-textbook/item/59
+      **** aov()/lm() does default to na.omit() - but can use 1 intensity/condition (Wilcox requires 2/condition)
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+28FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    
+* Got aov/tukey code running with help from the above links
+  ** Still would like to fix the legend order, but not a priority. Otherwise formatting is great.
+* Created feature count table
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+28FEB2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Created feature count plot as directed by Matt
+* Started protein-level count table and plot
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+01MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Finished protein-level count table - required removing all NP/Feature related columns
+  ** Waiting on peptide-level table until I confirm w/ Matt this is necessary with the other two
+* Re-looked at anova set up - I think there's a way to do more than 1 variable
+  ** http://www.sthda.com/english/wiki/two-way-anova-test-in-r
+  ** VERY good anova link w/ explanations, hypothesis testing, and code
+  ** https://statsandr.com/blog/two-way-anova-in-r/#pairwise-comparisons
+  ** VERY goo tukeyhsd link w/ explanations, hypothesis testing, and code for 2 variable (uses penguins data)
+* Two-way ANOVA (for volume + feature) crashes R, so going to stick with single variable Volume version for now (still informative, but can't replace Wilcox volcanos)
+* Added ANOVA assumption testing
+  ** 1. Homogeneity of variances - plot and Levene’s test (from car pkg)
+    *** No outliers on plot: √
+    *** Levene's test: 0.9461 > 0.05 √
+  ** 2. Normality - plot and Shapiro-Wilk/Anderson-Darling test
+    *** Some curve, but mostly along the normal diagonal: √
+    *** Shapiro-Wilk test: sample size too large
+    *** Anderson-Darling test: 2.2e-16 < 0.05 X (but because the plot looks ok and a log transformation has been applied, acceptable for now)
+    *** https://www.tutorialspoint.com/how-to-deal-with-error-error-in-shapiro-test-sample-size-must-be-between-3-and-5000-in-r
+* Set up Wilcox tests for each dilution comparison (boxplot, then pval bar plots and FC volcano plots)
+  ** Need to figure out how to adjust image size ggarrange in html - currently saving at the right size, but scrunched in knitted html
+* Sent updated html to Matt for end of week update
+    
+
+
+
+
+
+

@@ -1,0 +1,1127 @@
+---
+title: "Seer Proteograph Comparison: Gen1 (5NP) vs. XT (2NP)"
+author: "Sophia Soriano"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(readr)
+library(readxl)
+library(SomaDataIO)
+library(stringr)
+library(EnvStats)
+library(plotly)
+library(htmlwidgets)
+library(ggrepel)
+library(truncnorm)
+library(scales)
+library(knitr)
+library(naniar)
+library(eList)
+library(stats)
+library(toolbox)
+library(arsenal)
+library(multcompView)
+library(viridis)
+library(car)
+library(nortest)
+```
+
+```{r Load_Data}
+raw_data_murine = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/Murine_dilution/report.tsv")
+raw_data_PC3_Gen1 = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_Gen1_SpLib/report.tsv")
+raw_data_PC3_XT_libfree = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_libfree/report.tsv")
+raw_data_PC3_XT_SpLib = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_SpLib/report.tsv")
+raw_data_PC3_XT_timsLib = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_timsLib/report.tsv")
+```
+
+### Murine Sample Volume Experiment
+
+```{r MUS_Organize_Data}
+#Code from Matt for DIANN raw data processing
+diann_MUS_subset = raw_data_murine %>%
+                      #Filter out peptides with Precursor and Protein Group intensities of 0
+                      filter(Precursor.Quantity > 0) %>%
+                      filter(PG.Quantity > 0) %>%
+                      #Filter our any peptides & protein groups that have a Q value of > 0.01 (FDR 1%)
+                      filter(Global.PG.Q.Value < 0.01) %>%
+                      filter(Global.Q.Value < 0.01) %>%
+                      filter(Q.Value < 0.01)
+
+#Make new Sample, NP, replicate columns in data df with grep/substring
+diann_MUS_subset = diann_MUS_subset %>% mutate(Sample = sub("[0-9]*_(.*)([A-Z])_NP.*","\\1_\\2",Run),
+                                               NP = sub("[0-9]*_.*_NP(.).*","\\1",Run),
+                                               Volume = sub(".*_(.*)uL_.*","\\1",Sample),
+                                               Volume = ifelse(grepl("neat",Sample),250,Volume),
+                                               Volume = suppressWarnings(as.numeric(Volume)),
+                                               Replicate = sub(".*(.)$","\\1",Sample))
+
+#Convert output to summarized protein info by removing duplicate peptides
+MUS_proteins = diann_MUS_subset %>%
+                group_by(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value) %>%
+                distinct(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value, .keep_all = TRUE) %>%
+                ungroup() %>%
+                mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
+                filter(!is.na(Log2_LFQ_Intensity))
+
+#Save protein data table - no sparsity filter
+write.table(MUS_proteins, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/Murine_dilution/SeerXT_MUS_proteins.tsv", sep = "\t", row.names = FALSE)
+```
+
+```{r MUS_Sparsity_Filter}
+#Calculate number of replicated per volume
+num_MUS_rep = n_distinct(MUS_proteins$Sample)/n_distinct(MUS_proteins$Volume)
+
+#50% Sparsity Filter - by volume
+# seerXT_MUS_final_df = MUS_proteins %>%
+#   mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+#   group_by(Feature,Volume) %>%
+#   mutate(percent_detection = n_distinct(Sample)/num_MUS_rep) %>%
+#   ungroup() %>%
+#   filter(percent_detection >= 0.5)
+
+#0% Sparsity Filter - by volume - feature appears in all 3 replicates
+seerXT_MUS_final_3Rep_df = MUS_proteins %>%
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount == 3)
+
+#25% Sparsity Filter - by volume - feature appears in >=2 replicates (use for analytics going forward)
+seerXT_MUS_final_2Rep_df = MUS_proteins %>%
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 2)
+
+#75% Sparsity Filter - by volume - no filter
+seerXT_MUS_final_1Rep_df = MUS_proteins %>%
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 1)
+
+#Save data after 50% sparsity filter
+write.table(seerXT_MUS_final_2Rep_df, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/Murine_dilution/SeerXT_MUS_proteins_50SF.tsv", sep = "\t", row.names = FALSE)
+```
+
+```{r MUS_DataTransform}
+#Transform data to wide form for statistical test
+seerXT_MUS_wide_df = seerXT_MUS_final_2Rep_df %>% mutate(Volume_uL = paste(Volume,"uL",sep="")) %>%
+                                                dplyr::group_by(Feature,Protein.Ids,Volume_uL) %>%
+                                                summarize(data = list(Log2_LFQ_Intensity), count = n(), .groups = "drop") %>%
+                                                pivot_wider(names_from = Volume_uL, values_from = c(data,count))
+
+#Transform data for statistical test
+seerXT_MUS_anova_df = seerXT_MUS_final_2Rep_df %>% mutate(Volume_uL = paste(Volume,"uL",sep="")) %>%
+                                                dplyr::group_by(Feature,Volume_uL,Volume) %>%
+                                                summarize(Mean_Log2_LFQ_Intensity = mean(Log2_LFQ_Intensity), count = n(), .groups = "drop")
+
+#Filter out any features with <1 intensity count
+seerXT_MUS_wide_allV_df = seerXT_MUS_wide_df %>% filter(count_10uL>=1 & count_25uL>=1 & count_50uL>=1 & 
+                                                          count_100uL>=1 & count_125uL>=1 & count_250uL>=1)
+
+```
+
+**Table X: Feature counts for murine samples in volume experiment.**
+
+```{r MUS_Feature_Num_Table}
+#Create df for protein count table
+MUS_featnum_noSF_df = seerXT_MUS_final_1Rep_df %>% dplyr::group_by(Sample) %>%
+                                                    summarise(Feature_Count_noSF = n())
+
+MUS_featnum_2Rep_df = seerXT_MUS_final_2Rep_df %>% dplyr::group_by(Sample,Volume) %>%
+                                                    summarise(Feature_Count_2RepMin = n())
+
+MUS_featnum_df = merge(MUS_featnum_noSF_df,MUS_featnum_2Rep_df, by = "Sample")
+MUS_featnum_df["Feature_Count_1RepMin_AllVolumes"] = length(seerXT_MUS_wide_allV_df$Feature)
+
+MUS_feattable_df = MUS_featnum_df %>% dplyr::select(-Volume)
+knitr::kable(MUS_feattable_df)
+```
+
+```{r MUS_Feature_Count_Plot}
+# Add other sparsity filter data to table
+MUS_featnum_3Rep_df = seerXT_MUS_final_3Rep_df %>% dplyr::group_by(Sample) %>%
+                                              summarise(Feature_Count_3RepMin = n())
+MUS_featnum_plot_df = merge(MUS_featnum_df,MUS_featnum_3Rep_df,by = "Sample")
+
+MUS_featnum_plot_df = MUS_featnum_plot_df %>% group_by(Volume) %>%
+                                              mutate(Mean_Feature_Count_noSF = round(mean(Feature_Count_noSF),0),
+                                                     Mean_Feature_Count_2RepMin = round(mean(Feature_Count_2RepMin),0),
+                                                     Mean_Feature_Count_3RepMin = round(mean(Feature_Count_3RepMin),0)) %>%
+                                              ungroup() %>%
+                                              dplyr::select(c("Volume","Mean_Feature_Count_noSF",
+                                                              "Mean_Feature_Count_2RepMin","Mean_Feature_Count_3RepMin")) %>%
+                                              unique() %>%
+                                              pivot_longer(names_to = c("FilterType"),
+                                                           values_to = c("Mean_Feature_Count"),
+                                                           cols = starts_with("Mean")) %>%
+                                              mutate(FilterType = sub("Mean_Feature_Count_","",FilterType))
+
+#Bar plot
+MUS_featnum_plot = ggplot(MUS_featnum_plot_df, aes(fill=FilterType, y=Mean_Feature_Count, x=reorder(as.factor(Volume),Volume))) + 
+  geom_bar(position = "nudge",stat="identity") + 
+  theme_bw() +
+  labs(x = "Volume (uL)",
+       y = "Mean Feature Count",
+       title = "Seer Proteograph XT Comparison: Feature Counts",
+       subtitle = "") +
+  scale_fill_viridis(discrete = TRUE)
+ggsave("~/Code/XT_Comparison/Plots/MUS_featnum_plot.png")
+MUS_featnum_plot
+```
+\newline
+
+**Figure X: Feature counts for murine samples across volume conditions. Colors represent different sparsity filters applied at the feature level across replicates for a sample (no filter, 2 replicate minimum, 3 replicate minimum).**
+
+\newline
+
+**Table X: Protein counts for murine samples in volume experiment.**
+
+```{r MUS_Protein_Num_Table}
+#Create df for protein count table
+MUS_protnum_noSF_df = seerXT_MUS_final_1Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids")) %>%
+                                                   unique() %>%
+                                                   dplyr::group_by(Sample) %>%
+                                                   summarise(Protein_Count_noSF = n())
+
+MUS_protnum_2Rep_df = seerXT_MUS_final_2Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids")) %>%
+                                                   unique() %>%
+                                                   dplyr::group_by(Sample,Volume) %>%
+                                                   summarise(Protein_Count_2RepMin = n())
+
+MUS_protnum_df = merge(MUS_protnum_noSF_df,MUS_protnum_2Rep_df, by = "Sample")
+MUS_protnum_df["Protein_Count_1RepMin_AllVolumes"] = length(unique(seerXT_MUS_wide_allV_df$Protein.Ids))
+
+MUS_prottable_df = MUS_protnum_df %>% dplyr::select(-Volume)
+knitr::kable(MUS_prottable_df)
+```
+
+```{r MUS_Protein_Count_Plot}
+# Add other sparsity filter data to table
+MUS_protnum_3Rep_df = seerXT_MUS_final_3Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids")) %>%
+                                                   unique() %>%
+                                                   dplyr::group_by(Sample) %>%
+                                                   summarise(Protein_Count_3RepMin = n())
+MUS_protnum_plot_df = merge(MUS_protnum_df,MUS_protnum_3Rep_df,by = "Sample")
+
+MUS_protnum_plot_df = MUS_protnum_plot_df %>% group_by(Volume) %>%
+                                              mutate(Mean_Protein_Count_noSF = round(mean(Protein_Count_noSF),0),
+                                                     Mean_Protein_Count_2RepMin = round(mean(Protein_Count_2RepMin),0),
+                                                     Mean_Protein_Count_3RepMin = round(mean(Protein_Count_3RepMin),0)) %>%
+                                              ungroup() %>%
+                                              dplyr::select(c("Volume","Mean_Protein_Count_noSF",
+                                                              "Mean_Protein_Count_2RepMin","Mean_Protein_Count_3RepMin")) %>%
+                                              unique() %>%
+                                              pivot_longer(names_to = c("FilterType"),
+                                                           values_to = c("Mean_Protein_Count"),
+                                                           cols = starts_with("Mean")) %>%
+                                              mutate(FilterType = sub("Mean_Protein_Count_","",FilterType))
+
+#Bar plot
+MUS_protnum_plot = ggplot(MUS_protnum_plot_df, aes(fill=FilterType, y=Mean_Protein_Count, x=reorder(as.factor(Volume),Volume))) + 
+  geom_bar(position = "nudge",stat="identity") + 
+  theme_bw() +
+  labs(x = "Volume (uL)",
+       y = "Mean Protein Count",
+       title = "Seer Proteograph XT Comparison: Protein Counts",
+       subtitle = "") +
+  scale_fill_viridis(discrete = TRUE)
+ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot.png")
+MUS_protnum_plot
+```
+\newline
+
+**Figure X: Protein counts for murine samples across volume conditions. Colors represent different sparsity filters applied at the feature level across replicates for a sample (no filter, 2 replicate minimum, 3 replicate minimum).**
+
+```{r MUS_ANOVA_P1}
+#Create function to generate labels from tukey results
+generate_label_df <- function(TUKEY, variable){
+  # Extract labels and factor levels from Tukey post-hoc 
+  Tukey.levels = TUKEY[[variable]][,4]
+  Tukey.labels = data.frame(multcompLetters(Tukey.levels)['Letters'])
+
+  #I need to put the labels in the same order as in the boxplot :
+  Tukey.labels$treatment=rownames(Tukey.labels)
+  Tukey.labels=Tukey.labels[order(Tukey.labels$treatment) , ]
+  return(Tukey.labels)
+}
+
+#Create linear model for aov() - (yValue ~ xValue)
+model = lm(Mean_Log2_LFQ_Intensity ~ Volume_uL, data = seerXT_MUS_anova_df)
+MUS_anova = aov(model)
+
+#ANOVA Assumptions
+# 1. Homogeneity of variances - plot and Levene’s test
+plot(MUS_anova, 1)
+leveneTest(Mean_Log2_LFQ_Intensity ~ Volume_uL, data = seerXT_MUS_anova_df)
+# 2. Normality - plot and Shapiro-Wilk or Anderson-Darling test
+plot(MUS_anova, 2)
+MUS_anova_residuals = residuals(object = MUS_anova)
+#shapiro.test(x = MUS_anova_residuals) - sample size too large for this
+ad.test(MUS_anova_residuals)
+```
+
+\newline
+
+**Figure X: Plots and tests assessing the validity of the ANOVA test assumptions. Homogeneity of variances assumption is valid given absence of outliers on first plot and Levene's test p-value 0.9461 > $\alpha$ = 0.05. Normality assumption is acceptable given a relatively normal line on the normality plot and knowing that a log2 transformation has already been applied to this data, despite Anderson-Darling test resulting in p-value < 2.2e-16.**
+
+```{r MUS_ANOVA_P2}
+# Tukey test to study each pair of treatment :
+MUS_tukey = TukeyHSD(MUS_anova, which = "Volume_uL", conf.level = 0.95)
+
+MUS_labels = generate_label_df(MUS_tukey, "Volume_uL")#generate labels using function
+
+names(MUS_labels) = c('Letters','Volume_uL')#rename columns for merging
+
+MUS_yvalue = aggregate(Mean_Log2_LFQ_Intensity~Volume_uL, data=seerXT_MUS_anova_df, mean)# obtain letter position for y axis using means
+
+MUS_final = merge(MUS_labels,MUS_yvalue) #merge dataframes
+
+MUS_ANOVATukeyHSD_box_plot = ggplot(seerXT_MUS_anova_df, aes(x = reorder(Volume_uL,Volume), y = Mean_Log2_LFQ_Intensity)) +
+  geom_blank() +
+  theme_bw() +
+  labs(x = 'Volume (uL)', y = 'Mean Log2 LFQ Intensity') +
+  ggtitle(expression(atop(bold("Seer Proteograph XT: Murine Sample Volume Experiment"), atop(italic("ANOVA TukeyHSD"), "")))) +
+  theme(plot.title = element_text(hjust = 0.5, face='bold')) +
+  geom_violin(data = seerXT_MUS_anova_df, aes(x = Volume_uL, y = Mean_Log2_LFQ_Intensity, fill = Volume_uL), alpha = 0.4) +
+  geom_boxplot(aes(fill = Volume_uL), stat = "boxplot", outlier.shape = NA, alpha = 0.7) +
+  geom_text(data = MUS_final, aes(x = Volume_uL, y = Mean_Log2_LFQ_Intensity, label = Letters),vjust=-17,hjust=-1) +
+  geom_text(data = MUS_final, aes(x = Volume_uL, y = Mean_Log2_LFQ_Intensity, label = round(Mean_Log2_LFQ_Intensity,2))) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme(plot.title = element_text(vjust=-0.6))
+MUS_ANOVATukeyHSD_box_plot
+ggsave("./Plots/MUS_ANOVATukeyHSD_box_plot.png")
+```
+
+\newline
+
+**Figure X: Combo box/violin plot for the murine sample volume experiment data showing distributions of mean log2 LFQ intensities (averaged across 3 replicates per sample) separated on the x axis by sample volume. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test.**
+
+```{r MUS_WiT}
+#Wilcox test - store pvalue and difference
+MUS_seerXT_WiT_df = seerXT_MUS_wide_allV_df %>%
+  rowwise() %>%
+  mutate(wt_pval_10v25 = wilcox.test(unlist(data_10uL), unlist(data_25uL))$p.value) %>%
+  mutate(Diff_10v25 = (median(unlist(data_10uL)) - median(unlist(data_25uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_10v25_BH = p.adjust(wt_pval_10v25, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_10v50 = wilcox.test(unlist(data_10uL), unlist(data_50uL))$p.value) %>%
+  mutate(Diff_10v50 = (median(unlist(data_10uL)) - median(unlist(data_50uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_10v50_BH = p.adjust(wt_pval_10v50, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_10v100 = wilcox.test(unlist(data_10uL), unlist(data_100uL))$p.value) %>%
+  mutate(Diff_10v100 = (median(unlist(data_10uL)) - median(unlist(data_100uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_10v100_BH = p.adjust(wt_pval_10v100, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_10v125 = wilcox.test(unlist(data_10uL), unlist(data_125uL))$p.value) %>%
+  mutate(Diff_10v125 = (median(unlist(data_10uL)) - median(unlist(data_125uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_10v125_BH = p.adjust(wt_pval_10v125, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_10v250 = wilcox.test(unlist(data_10uL), unlist(data_250uL))$p.value) %>%
+  mutate(Diff_10v250 = (median(unlist(data_10uL)) - median(unlist(data_250uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_10v250_BH = p.adjust(wt_pval_10v250, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_25v50 = wilcox.test(unlist(data_25uL), unlist(data_50uL))$p.value) %>%
+  mutate(Diff_25v50 = (median(unlist(data_25uL)) - median(unlist(data_50uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_25v50_BH = p.adjust(wt_pval_25v50, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_25v100 = wilcox.test(unlist(data_25uL), unlist(data_100uL))$p.value) %>%
+  mutate(Diff_25v100 = (median(unlist(data_25uL)) - median(unlist(data_100uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_25v100_BH = p.adjust(wt_pval_25v100, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_25v125 = wilcox.test(unlist(data_25uL), unlist(data_125uL))$p.value) %>%
+  mutate(Diff_25v125 = (median(unlist(data_25uL)) - median(unlist(data_125uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_25v125_BH = p.adjust(wt_pval_25v125, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_25v250 = wilcox.test(unlist(data_25uL), unlist(data_250uL))$p.value) %>%
+  mutate(Diff_25v250 = (median(unlist(data_25uL)) - median(unlist(data_250uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_25v250_BH = p.adjust(wt_pval_25v250, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_50v100 = wilcox.test(unlist(data_50uL), unlist(data_100uL))$p.value) %>%
+  mutate(Diff_50v100 = (median(unlist(data_50uL)) - median(unlist(data_100uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_50v100_BH = p.adjust(wt_pval_50v100, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_50v125 = wilcox.test(unlist(data_50uL), unlist(data_125uL))$p.value) %>%
+  mutate(Diff_50v125 = (median(unlist(data_50uL)) - median(unlist(data_125uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_50v125_BH = p.adjust(wt_pval_50v125, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_50v250 = wilcox.test(unlist(data_50uL), unlist(data_250uL))$p.value) %>%
+  mutate(Diff_50v250 = (median(unlist(data_50uL)) - median(unlist(data_250uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_50v250_BH = p.adjust(wt_pval_50v250, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_100v125 = wilcox.test(unlist(data_100uL), unlist(data_125uL))$p.value) %>%
+  mutate(Diff_100v125 = (median(unlist(data_100uL)) - median(unlist(data_125uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_100v125_BH = p.adjust(wt_pval_100v125, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_100v250 = wilcox.test(unlist(data_100uL), unlist(data_250uL))$p.value) %>%
+  mutate(Diff_100v250 = (median(unlist(data_100uL)) - median(unlist(data_250uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_100v250_BH = p.adjust(wt_pval_100v250, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_125v250 = wilcox.test(unlist(data_125uL), unlist(data_250uL))$p.value) %>%
+  mutate(Diff_125v250 = (median(unlist(data_125uL)) - median(unlist(data_250uL)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_125v250_BH = p.adjust(wt_pval_125v250, method = "BH"))
+
+#Add significance flags to WiT df
+MUS_seerXT_WiT_df = MUS_seerXT_WiT_df %>%
+  mutate(p_val_10v25_sig = ifelse(wt_pval_10v25_BH < 0.05, "Significant", "Non"),
+         proteins_10v25_sig = ifelse(wt_pval_10v25_BH < 0.05, Protein.Ids, ""),
+         p_val_10v50_sig = ifelse(wt_pval_10v50_BH < 0.05, "Significant", "Non"),
+         proteins_10v50_sig = ifelse(wt_pval_10v50_BH < 0.05, Protein.Ids, ""),
+         p_val_10v100_sig = ifelse(wt_pval_10v100_BH < 0.05, "Significant", "Non"),
+         proteins_10v100_sig = ifelse(wt_pval_10v100_BH < 0.05, Protein.Ids, ""),
+         p_val_10v125_sig = ifelse(wt_pval_10v125_BH < 0.05, "Significant", "Non"),
+         proteins_10v125_sig = ifelse(wt_pval_10v125_BH < 0.05, Protein.Ids, ""),
+         p_val_10v250_sig = ifelse(wt_pval_10v250_BH < 0.05, "Significant", "Non"),
+         proteins_10v250_sig = ifelse(wt_pval_10v250_BH < 0.05, Protein.Ids, ""),
+         p_val_25v50_sig = ifelse(wt_pval_25v50_BH < 0.05, "Significant", "Non"),
+         proteins_25v50_sig = ifelse(wt_pval_25v50_BH < 0.05, Protein.Ids, ""),
+         p_val_25v100_sig = ifelse(wt_pval_25v100_BH < 0.05, "Significant", "Non"),
+         proteins_25v100_sig = ifelse(wt_pval_25v100_BH < 0.05, Protein.Ids, ""),
+         p_val_25v125_sig = ifelse(wt_pval_25v125_BH < 0.05, "Significant", "Non"),
+         proteins_25v125_sig = ifelse(wt_pval_25v125_BH < 0.05, Protein.Ids, ""),
+         p_val_25v250_sig = ifelse(wt_pval_25v250_BH < 0.05, "Significant", "Non"),
+         proteins_25v250_sig = ifelse(wt_pval_25v250_BH < 0.05, Protein.Ids, ""),
+         p_val_50v100_sig = ifelse(wt_pval_50v100_BH < 0.05, "Significant", "Non"),
+         proteins_50v100_sig = ifelse(wt_pval_50v100_BH < 0.05, Protein.Ids, ""),
+         p_val_50v125_sig = ifelse(wt_pval_50v125_BH < 0.05, "Significant", "Non"),
+         proteins_50v125_sig = ifelse(wt_pval_50v125_BH < 0.05, Protein.Ids, ""),
+         p_val_50v250_sig = ifelse(wt_pval_50v250_BH < 0.05, "Significant", "Non"),
+         proteins_50v250_sig = ifelse(wt_pval_50v250_BH < 0.05, Protein.Ids, ""),
+         p_val_100v125_sig = ifelse(wt_pval_100v125_BH < 0.05, "Significant", "Non"),
+         proteins_100v125_sig = ifelse(wt_pval_100v125_BH < 0.05, Protein.Ids, ""),
+         p_val_100v250_sig = ifelse(wt_pval_100v250_BH < 0.05, "Significant", "Non"),
+         proteins_100v250_sig = ifelse(wt_pval_100v250_BH < 0.05, Protein.Ids, ""),
+         p_val_125v250_sig = ifelse(wt_pval_125v250_BH < 0.05, "Significant", "Non"),
+         proteins_125v250_sig = ifelse(wt_pval_125v250_BH < 0.05, Protein.Ids, ""),
+  )
+```
+
+```{r Plot_MUS_boxplot}
+#Organize FC in long format
+WiT_boxDS_MUS_df = MUS_seerXT_WiT_df %>% 
+                   pivot_longer(names_to = "Dilution_Comparison",
+                                values_to = "FC",
+                                cols = starts_with("Diff")) %>%
+                    mutate(Dilution_Comparison = ifelse(Dilution_Comparison == "Diff_10v25",
+                                                        "10uL-25uL",
+                                                        ifelse(Dilution_Comparison == "Diff_10v50",
+                                                               "10uL-50uL",
+                                                               ifelse(Dilution_Comparison == "Diff_10v100",
+                                                                      "10uL-100uL",
+                                                                      ifelse(Dilution_Comparison == "Diff_10v125",
+                                                                             "10uL-125uL",
+                                                                             ifelse(Dilution_Comparison == "Diff_10v250",
+                                                                                    "10uL-250uL",
+                                                                                    ifelse(Dilution_Comparison == "Diff_25v50",
+                                                                                           "25uL-50uL",
+                                                                                           ifelse(Dilution_Comparison == "Diff_25v100",
+                                                                                                  "25uL-100uL",
+                                                                                                  ifelse(Dilution_Comparison == "Diff_25v125",
+                                                                                                         "25uL-125uL",
+                                                                                                         ifelse(Dilution_Comparison == "Diff_25v250",
+                                                                                                                "25uL-250uL",
+                                                                                                                ifelse(Dilution_Comparison == "Diff_50v100",
+                                                                                                                       "50uL-100uL",
+                                                                                                                       ifelse(Dilution_Comparison == "Diff_50v125",
+                                                                                                                              "50uL-125uL",
+                                                                                                                              ifelse(Dilution_Comparison == "Diff_50v250",
+                                                                                                                                     "50uL-250uL",
+                                                                                                                                     ifelse(Dilution_Comparison == "Diff_100v125",
+                                                                                                                                            "100uL-125uL",
+                                                                                                                                            ifelse(Dilution_Comparison == "Diff_100v250",
+                                                                                                                                                   "100uL-250uL",
+                                                                                                                                                   ifelse(Dilution_Comparison == "Diff_125v250",
+                                                                                                                                                          "125uL-250uL",
+                                                                                                                                                          NA)))))))))))))))) %>%
+                    mutate(Dilution_Comparison_Order = ifelse(Dilution_Comparison == "10uL-25uL",
+                                                        1,
+                                                        ifelse(Dilution_Comparison == "10uL-50uL",
+                                                               2,
+                                                               ifelse(Dilution_Comparison == "10uL-100uL",
+                                                                      3,
+                                                                      ifelse(Dilution_Comparison == "10uL-125uL",
+                                                                             4,
+                                                                             ifelse(Dilution_Comparison == "10uL-250uL",
+                                                                                    5,
+                                                                                    ifelse(Dilution_Comparison == "25uL-50uL",
+                                                                                           6,
+                                                                                           ifelse(Dilution_Comparison == "25uL-100uL",
+                                                                                                  7,
+                                                                                                  ifelse(Dilution_Comparison == "25uL-125uL",
+                                                                                                         8,
+                                                                                                         ifelse(Dilution_Comparison == "25uL-250uL",
+                                                                                                                9,
+                                                                                                                ifelse(Dilution_Comparison == "50uL-100uL",
+                                                                                                                       10,
+                                                                                                                       ifelse(Dilution_Comparison == "50uL-125uL",
+                                                                                                                              11,
+                                                                                                                              ifelse(Dilution_Comparison == "50uL-250uL",
+                                                                                                                                     12,
+                                                                                                                                     ifelse(Dilution_Comparison == "100uL-125uL",
+                                                                                                                                            13,
+                                                                                                                                            ifelse(Dilution_Comparison == "100uL-250uL",
+                                                                                                                                                   14,
+                                                                                                                                                   ifelse(Dilution_Comparison == "125uL-250uL",
+                                                                                                                                                          15,
+                                                                                                                                                          NA))))))))))))))))
+
+#Boxplot of intensity distributions per sample - mouse
+WiT_boxDS_MUS_plot = WiT_boxDS_MUS_df %>%
+  ggplot(aes(x = reorder(Dilution_Comparison,Dilution_Comparison_Order), y = FC, fill = Dilution_Comparison)) +
+  geom_boxplot(alpha = 0.5) +
+  #geom_text(aes(label = median(FC))) +
+  labs(title = "FC Distribution: Mouse Sample Volume Experiment",
+       subtitle = "",
+       y = "Log2(FC)") +
+  theme_bw() +
+  #stat_mean_sd_text(size = 2, y.pos = 6000) +
+  #ylim(0,6000) +
+  geom_hline(yintercept=0, colour="grey3", linetype = "dashed") +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12, angle = 90)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14)) +
+  scale_fill_viridis(discrete = TRUE)
+ggsave("./Plots/WiT_boxDS_MUS_plot.png", width = 4, height = 3, units = "in")
+WiT_boxDS_MUS_plot
+```
+
+\newline
+
+**Figure X: Boxplot FC distributions of murine dilution series data.**
+
+```{r Plot_WiT_pval_MUS}
+#Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
+WiT_pval_10v25_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_10v25)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "10uL vs. 25uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_10v25_dist_mouse_plot.png")
+
+WiT_pval_10v50_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_10v50)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "10uL vs. 50uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_10v50_dist_mouse_plot.png")
+
+WiT_pval_10v100_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_10v100)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "10uL vs. 100uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_10v100_dist_mouse_plot.png")
+
+WiT_pval_10v125_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_10v125)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "10uL vs. 125uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_10v125_dist_mouse_plot.png")
+
+WiT_pval_10v250_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_10v250)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "10uL vs. 250uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_10v250_dist_mouse_plot.png")
+
+WiT_pval_25v50_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_25v50)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "25uL vs. 50uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_25v50_dist_mouse_plot.png")
+
+WiT_pval_25v100_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_25v100)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "25uL vs. 100uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_25v100_dist_mouse_plot.png")
+
+WiT_pval_25v125_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_25v125)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "25uL vs. 125uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_25v125_dist_mouse_plot.png")
+
+WiT_pval_25v250_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_25v250)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "25uL vs. 250uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_25v250_dist_mouse_plot.png")
+
+WiT_pval_50v100_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_50v100)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "50uL vs. 100uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_50v100_dist_mouse_plot.png")
+
+WiT_pval_50v125_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_50v125)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "50uL vs. 125uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_50v125_dist_mouse_plot.png")
+
+WiT_pval_50v250_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_50v250)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "50uL vs. 250uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_50v250_dist_mouse_plot.png")
+
+WiT_pval_100v125_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_100v125)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "100uL vs. 125uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_100v125_dist_mouse_plot.png")
+
+WiT_pval_100v250_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_100v250)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "100uL vs. 250uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_100v250_dist_mouse_plot.png")
+
+WiT_pval_125v250_dist_mouse_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(wt_pval_125v250)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "125uL vs. 250uL") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_125v250_dist_mouse_plot.png")
+
+fig_pval_MUS = ggarrange(WiT_pval_10v25_dist_mouse_plot, WiT_pval_10v50_dist_mouse_plot, WiT_pval_10v100_dist_mouse_plot, WiT_pval_10v125_dist_mouse_plot, WiT_pval_10v250_dist_mouse_plot,
+                          WiT_pval_25v50_dist_mouse_plot, WiT_pval_25v100_dist_mouse_plot, WiT_pval_25v125_dist_mouse_plot, WiT_pval_25v250_dist_mouse_plot,
+                          WiT_pval_50v100_dist_mouse_plot, WiT_pval_50v125_dist_mouse_plot, WiT_pval_50v250_dist_mouse_plot,
+                          WiT_pval_100v125_dist_mouse_plot, WiT_pval_100v250_dist_mouse_plot,
+                          WiT_pval_125v250_dist_mouse_plot,
+                          labels="AUTO", ncol = 3, nrow = 5)
+annotate_figure(fig_pval_MUS, top = text_grob("P-Value Distribution of Wilcox Test Results: Mouse", size = 14))
+ggsave("./Plots/fig_pval_MUS.png", width = 8, height = 16)
+```
+
+\newline
+
+**Figure X: P-value distributions for Wilcox tests performed on the mouse dilution series. Log2-transformed data, FC = (low volume - high volume). **
+
+```{r Plot_WiT_volc_MUS}
+#Wilcox volcano Plot
+WiT_10v25_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_10v25, y = -log(wt_pval_10v25_BH, 10), group = p_val_10v25_sig)) +
+  geom_point(aes(color = p_val_10v25_sig, text = proteins_10v25_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_10v25_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "10uL vs. 25uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_10v25_mouse_volcano_plot.png")
+# WiT_10v25_mouse_volcano_plot
+
+# WiT_10v25_mouse_volcano_plotly = ggplotly(WiT_10v25_mouse_volcano_plot, tooltip = "proteins_10v50_sig")
+# saveWidget(WiT_10v25_mouse_volcano_plotly, "./Plots/WiT_10v25_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_10v50_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_10v50, y = -log(wt_pval_10v50_BH, 10), group = p_val_10v50_sig)) +
+  geom_point(aes(color = p_val_10v50_sig, text = proteins_10v50_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_10v50_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "10uL vs. 50uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_10v50_mouse_volcano_plot.png")
+# WiT_10v50_mouse_volcano_plot
+
+# WiT_10v50_mouse_volcano_plotly = ggplotly(WiT_10v50_mouse_volcano_plot, tooltip = "proteins_10v50_sig")
+# saveWidget(WiT_10v50_mouse_volcano_plotly, "WiT_10v50_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_10v100_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_10v100, y = -log(wt_pval_10v100_BH, 10), group = p_val_10v100_sig)) +
+  geom_point(aes(color = p_val_10v100_sig, text = proteins_10v100_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_10v100_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "10uL vs. 100uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_10v100_mouse_volcano_plot.png")
+# WiT_10v100_mouse_volcano_plot
+
+# WiT_10v100_mouse_volcano_plotly = ggplotly(WiT_10v100_mouse_volcano_plot, tooltip = "proteins_10v100_sig")
+# saveWidget(WiT_10v100_mouse_volcano_plotly, "WiT_10v100_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_10v125_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_10v125, y = -log(wt_pval_10v125_BH, 10), group = p_val_10v125_sig)) +
+  geom_point(aes(color = p_val_10v125_sig, text = proteins_10v125_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_10v125_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "10uL vs. 125uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_10v125_mouse_volcano_plot.png")
+# WiT_10v125_mouse_volcano_plot
+
+# WiT_10v125_mouse_volcano_plotly = ggplotly(WiT_10v125_mouse_volcano_plot, tooltip = "proteins_10v125_sig")
+# saveWidget(WiT_10v125_mouse_volcano_plotly, "WiT_10v125_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_10v250_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_10v250, y = -log(wt_pval_10v250_BH, 10), group = p_val_10v250_sig)) +
+  geom_point(aes(color = p_val_10v250_sig, text = proteins_10v250_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_10v250_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "10uL vs. 250uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_10v250_mouse_volcano_plot.png")
+# WiT_10v250_mouse_volcano_plot
+
+# WiT_10v250_mouse_volcano_plotly = ggplotly(WiT_10v250_mouse_volcano_plot, tooltip = "proteins_10v250_sig")
+# saveWidget(WiT_10v250_mouse_volcano_plotly, "WiT_10v250_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_25v50_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_25v50, y = -log(wt_pval_25v50_BH, 10), group = p_val_25v50_sig)) +
+  geom_point(aes(color = p_val_25v50_sig, text = proteins_25v50_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_25v50_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "25uL vs. 50uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_25v50_mouse_volcano_plot.png")
+# WiT_25v50_mouse_volcano_plot
+
+# WiT_25v50_mouse_volcano_plotly = ggplotly(WiT_25v50_mouse_volcano_plot, tooltip = "proteins_25v50_sig")
+# saveWidget(WiT_25v50_mouse_volcano_plotly, "WiT_25v50_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_25v100_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_25v100, y = -log(wt_pval_25v100_BH, 10), group = p_val_25v100_sig)) +
+  geom_point(aes(color = p_val_25v100_sig, text = proteins_25v100_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_25v100_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "25uL vs. 100uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_25v100_mouse_volcano_plot.png")
+# WiT_25v100_mouse_volcano_plot
+
+# WiT_25v100_mouse_volcano_plotly = ggplotly(WiT_25v100_mouse_volcano_plot, tooltip = "proteins_25v100_sig")
+# saveWidget(WiT_25v100_mouse_volcano_plotly, "WiT_25v100_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_25v125_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_25v125, y = -log(wt_pval_25v125_BH, 10), group = p_val_25v125_sig)) +
+  geom_point(aes(color = p_val_25v125_sig, text = proteins_25v125_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_25v125_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "25uL vs. 125uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_25v125_mouse_volcano_plot.png")
+# WiT_25v125_mouse_volcano_plot
+
+# WiT_25v125_mouse_volcano_plotly = ggplotly(WiT_25v125_mouse_volcano_plot, tooltip = "proteins_25v125_sig")
+# saveWidget(WiT_25v125_mouse_volcano_plotly, "WiT_25v125_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_25v250_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_25v250, y = -log(wt_pval_25v250_BH, 10), group = p_val_25v250_sig)) +
+  geom_point(aes(color = p_val_25v250_sig, text = proteins_25v250_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_25v250_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "25uL vs. 250uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_25v250_mouse_volcano_plot.png")
+# WiT_25v250_mouse_volcano_plot
+
+# WiT_25v250_mouse_volcano_plotly = ggplotly(WiT_25v250_mouse_volcano_plot, tooltip = "proteins_25v250_sig")
+# saveWidget(WiT_25v250_mouse_volcano_plotly, "WiT_25v250_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_50v100_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_50v100, y = -log(wt_pval_50v100_BH, 10), group = p_val_50v100_sig)) +
+  geom_point(aes(color = p_val_50v100_sig, text = proteins_50v100_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_50v100_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "50uL vs. 100uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_50v100_mouse_volcano_plot.png")
+# WiT_50v100_mouse_volcano_plot
+
+# WiT_50v100_mouse_volcano_plotly = ggplotly(WiT_50v100_mouse_volcano_plot, tooltip = "proteins_50v100_sig")
+# saveWidget(WiT_50v100_mouse_volcano_plotly, "WiT_50v100_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_50v125_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_50v125, y = -log(wt_pval_50v125_BH, 10), group = p_val_50v125_sig)) +
+  geom_point(aes(color = p_val_50v125_sig, text = proteins_50v125_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_50v125_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "50uL vs. 125uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_50v125_mouse_volcano_plot.png")
+# WiT_50v125_mouse_volcano_plot
+
+# WiT_50v125_mouse_volcano_plotly = ggplotly(WiT_50v125_mouse_volcano_plot, tooltip = "proteins_50v125_sig")
+# saveWidget(WiT_50v125_mouse_volcano_plotly, "WiT_50v125_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_50v250_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_50v250, y = -log(wt_pval_50v250_BH, 10), group = p_val_50v250_sig)) +
+  geom_point(aes(color = p_val_50v250_sig, text = proteins_50v250_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_50v250_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "50uL vs. 250uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_50v250_mouse_volcano_plot.png")
+# WiT_50v250_mouse_volcano_plot
+
+# WiT_50v250_mouse_volcano_plotly = ggplotly(WiT_50v250_mouse_volcano_plot, tooltip = "proteins_50v250_sig")
+# saveWidget(WiT_50v250_mouse_volcano_plotly, "WiT_50v250_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_100v125_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_100v125, y = -log(wt_pval_100v125_BH, 10), group = p_val_100v125_sig)) +
+  geom_point(aes(color = p_val_100v125_sig, text = proteins_100v125_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_100v125_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "100uL vs. 125uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_100v125_mouse_volcano_plot.png")
+# WiT_100v125_mouse_volcano_plot
+
+# WiT_100v125_mouse_volcano_plotly = ggplotly(WiT_100v125_mouse_volcano_plot, tooltip = "proteins_100v125_sig")
+# saveWidget(WiT_100v125_mouse_volcano_plotly, "WiT_100v125_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_100v250_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_100v250, y = -log(wt_pval_100v250_BH, 10), group = p_val_100v250_sig)) +
+  geom_point(aes(color = p_val_100v250_sig, text = proteins_100v250_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_100v250_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "100uL vs. 250uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_100v250_mouse_volcano_plot.png")
+# WiT_100v250_mouse_volcano_plot
+
+# WiT_100v250_mouse_volcano_plotly = ggplotly(WiT_100v250_mouse_volcano_plot, tooltip = "proteins_100v250_sig")
+# saveWidget(WiT_100v250_mouse_volcano_plotly, "WiT_100v250_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_125v250_mouse_volcano_plot = MUS_seerXT_WiT_df %>%
+  ggplot(aes(x = Diff_125v250, y = -log(wt_pval_125v250_BH, 10), group = p_val_125v250_sig)) +
+  geom_point(aes(color = p_val_125v250_sig, text = proteins_125v250_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_125v250_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "125uL vs. 250uL") +
+  theme_bw() +
+  xlim(-4,4) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_125v250_mouse_volcano_plot.png")
+# WiT_125v250_mouse_volcano_plot
+
+# WiT_125v250_mouse_volcano_plotly = ggplotly(WiT_125v250_mouse_volcano_plot, tooltip = "proteins_125v250_sig")
+# saveWidget(WiT_125v250_mouse_volcano_plotly, "WiT_125v250_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+fig_WiT_MUS = ggarrange(WiT_10v25_mouse_volcano_plot, WiT_10v50_mouse_volcano_plot, WiT_10v100_mouse_volcano_plot, WiT_10v125_mouse_volcano_plot, WiT_10v250_mouse_volcano_plot,
+                        WiT_25v50_mouse_volcano_plot, WiT_25v100_mouse_volcano_plot, WiT_25v125_mouse_volcano_plot, WiT_25v250_mouse_volcano_plot,
+                        WiT_50v100_mouse_volcano_plot, WiT_50v125_mouse_volcano_plot, WiT_50v250_mouse_volcano_plot,
+                        WiT_100v125_mouse_volcano_plot, WiT_100v250_mouse_volcano_plot,
+                        WiT_125v250_mouse_volcano_plot,
+                        ncol = 3, nrow = 5)
+annotate_figure(fig_WiT_MUS, top = text_grob("Seer Proteograph XT Murine DE: Sample Volume Experiment", size = 18))
+ggsave("./Plots/fig_WiT_MUS.png", width = 8, height = 16, units = "in")
+```
+
+\newline
+
+**Figure X: Volcano plots showing significantly differentially expressed proteins between mouse samples in sample volume experiment. Log2-transformed data, FC = (low volume - high volume).**
+
+### PC3_Gen1_SpLib vs PC3_XT_SpLib (old vs. new)
+
+### PC3_XT_SpLib vs PC3_XT_timsLib vs PC3_XT_libfree (all new, search methods 1 vs. 2 vs. 3)
+
