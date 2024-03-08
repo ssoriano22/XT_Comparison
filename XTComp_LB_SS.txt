@@ -173,9 +173,54 @@ Human OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_la
   ** Need to figure out how to adjust image size ggarrange in html - currently saving at the right size, but scrunched in knitted html
 * Sent updated html to Matt for end of week update
     
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+04MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Looking at which features do not appear in the low volume samples
+  ** Maybe need to start with looking at features btwn rep for one sample/volume
+* JMay provided more details in an email - emphasis for her is on protein/peptide counts so I'll refocus on that
+  ** Early April deadline
+* Working on peptide count table/graph, making a version with each replicate as a separate bar (not the mean)
+* Created a version of that graph for noSF protein level data too
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+05MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
+* Revising plate map-MS file matching R script to add ctrls
+  ** Taking the top numeric row only in each group: https://stackoverflow.com/questions/24558328/select-the-row-with-the-maximum-value-in-each-group
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+06MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Adding a couple versions of each count plot to feature, protein, and peptide level analysis - Matt/JMay can decide which they like best
+* Creating third version (plot3) with replicate values shown in SD error bars, dodge position bar plot of Means per volume
+  ** Multiple-value pivot_longer: https://stackoverflow.com/questions/59253987/parallel-pivot-longer-of-two-sets-of-columns
+  ** Error bars: https://r-graph-gallery.com/4-barplot-with-error-bar.html
+* Switched anova + WiT stats for murine volume comparisons to use PG.Quantity (Raw) instead of PG.MaxLFQ (normalized) log2 data on recommendation by Matt
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+07MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Started on PC3 Gen1 vs. XT SpLib comparison
+  ** No feature-level comparison possible due to difference in NPs btwn platforms
+  ** Protein-level only
+  ** Matt mentions comparing CVs, but Gen1 only has one sample...emailing to figure out what he means
+  
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+08MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Matt clarified that the CV calculations should be for the murine samples (sample volume experiment)
+* Grabbing CV code from SomaLogic_Benchmark_v6.Rmd for that CV calculation/plotting
+  ** No increase in technical variability is observed w/ decrease in sample volume
+* Matt meeting:
+  ** Add text to FC distribution boxplot for median
+  ** Add violin to FC distribution
+  ** Add SF to 2+3RepMin peptide plot
 
 
 
