@@ -222,5 +222,40 @@ Human OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_la
   ** Add violin to FC distribution
   ** Add SF to 2+3RepMin peptide plot
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+12MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Added SF series to peptide plot - code is more like feature count/plot section now than protein
+* Added requested aspects to FC distribution plot:
+  ** Violin shape replaces outlier points
+  ** Added median + IQR (interquantile range) text to plot
+    *** https://www.scribbr.com/statistics/interquartile-range/#:~:text=In%20descriptive%20statistics%2C%20the%20interquartile,half%20of%20your%20data%20set.
+    *** Changed to just have median at top of plot - more like what Matt has done before, and doesn't mess with the plot dimensions as much
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+14MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Reformated PC3 section to reduce repetitive code - doubled checked that count numbers remained the same
+* Set up peptide and protein count table and bar plots for PC3 samples
+* Setting up PC3 XT comparisons on the feature level - using no sparsity filter, although only a different of ~4000 proteins across all conditions (search methods), total = ~21000 proteins
+* Realized I didn't have the replciate included in the Sample name - went back to include Replicate
+  ** PC3 Gen 1 section should be correct now - PC3 XT comparison still needs to be fixed
+  
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+15MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* PC3 XT section issue with Replicates/Methods is now fixed
+* Features created and counts calculated and bar plotted
+* Set up initial PC3 XT ANOVA - libfree is statistically different from SpLib and timsLib
+  ** ANOVA assumptions are invalid
+* Set up WiT calculations and plots
+* Double-checked results and captions
+  ** Added a proteins-in-common column in the PC3 Gen1 vs. XT section, fixed some MUS-naming in the PC3 section
+* Sent current Rmd and html versions to Matt to discuss next week/ask if any additional analysis is requested for these datasets
+
+
 
 

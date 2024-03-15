@@ -35,6 +35,7 @@ library(nortest)
 ```
 
 ```{r MUS_Load_Data}
+#Load murine raw data
 raw_data_murine = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/Murine_dilution/report.tsv")
 ```
 
@@ -85,7 +86,7 @@ num_MUS_rep = n_distinct(MUS_proteins$Sample)/n_distinct(MUS_proteins$Volume)
 #   ungroup() %>%
 #   filter(percent_detection >= 0.5)
 
-#0% Sparsity Filter - by volume - feature appears in all 3 replicates
+#3RepMin Sparsity Filter - by volume - feature appears in all 3 replicates
 seerXT_MUS_final_3Rep_df = MUS_proteins %>%
   mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
   group_by(Feature,Volume) %>%
@@ -93,7 +94,7 @@ seerXT_MUS_final_3Rep_df = MUS_proteins %>%
   ungroup() %>%
   filter(detection_repcount == 3)
 
-#25% Sparsity Filter - by volume - feature appears in >=2 replicates (use for analytics going forward)
+#2RepMin Sparsity Filter - by volume - feature appears in >=2 replicates (use for analytics going forward)
 seerXT_MUS_final_2Rep_df = MUS_proteins %>%
   mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
   group_by(Feature,Volume) %>%
@@ -101,7 +102,7 @@ seerXT_MUS_final_2Rep_df = MUS_proteins %>%
   ungroup() %>%
   filter(detection_repcount >= 2)
 
-#75% Sparsity Filter - by volume - no filter
+#No Sparsity Filter - by volume - no filter
 seerXT_MUS_final_1Rep_df = MUS_proteins %>%
   mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
   group_by(Feature,Volume) %>%
@@ -374,17 +375,56 @@ MUS_peptide_df = diann_MUS_subset %>%
                   mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
                   mutate(Log2_Raw_Intensity = ifelse(PG.Quantity == 0, NA, log2(PG.Quantity))) %>%
                   #filter(!is.na(Log2_LFQ_Intensity)) %>%
-                  filter(!is.na(Log2_Raw_Intensity)) %>%
-                  dplyr::group_by(Sample,Volume) %>%
-                  summarise(Peptide_Count_noSF = n())
+                  filter(!is.na(Log2_Raw_Intensity))
 
-MUS_peptable_df = MUS_peptide_df %>% dplyr::select(-Volume)
+#No Sparsity Filter
+MUS_peptide_1Rep_df = MUS_peptide_df  %>%
+  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 1)
+
+#3RepMin Sparsity Filter - by volume - feature appears in all 3 replicates
+MUS_peptide_3Rep_df = MUS_peptide_df  %>%
+  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount == 3)
+
+#2RepMin Sparsity Filter - by volume - feature appears in >=2 replicates (use for analytics going forward)
+MUS_peptide_2Rep_df = MUS_peptide_df  %>%
+  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Feature,Volume) %>%
+  mutate(detection_repcount = n_distinct(Sample)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 2)
+
+#Create df for peptide count table
+MUS_pepnum_noSF_df = MUS_peptide_1Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             dplyr::group_by(Sample,Volume) %>%
+                                             summarise(Peptide_Count_noSF = n())
+
+MUS_pepnum_2Rep_df = MUS_peptide_2Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             dplyr::group_by(Sample) %>%
+                                             summarise(Peptide_Count_2RepMin = n())
+
+MUS_pepnum_df = merge(MUS_pepnum_noSF_df,MUS_pepnum_2Rep_df, by = "Sample")
+# Add other sparsity filter data to table
+MUS_pepnum_3Rep_df = MUS_peptide_3Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             dplyr::group_by(Sample) %>%
+                                             summarise(Peptide_Count_3RepMin = n())
+
+MUS_pepnum_df = merge(MUS_pepnum_df,MUS_pepnum_3Rep_df,by = "Sample")
+
+MUS_peptable_df = MUS_pepnum_df %>% dplyr::select(-Volume)
 knitr::kable(MUS_peptable_df)
 ```
 
 ```{r MUS_Peptide_Count_Plot, include=FALSE}
 #Create df for peptide count plot
-MUS_pepnum_plot_df = MUS_peptide_df%>% group_by(Volume) %>%
+MUS_pepnum_plot_df = MUS_pepnum_df %>% group_by(Volume) %>%
                                         mutate(Mean_Peptide_Count_noSF = round(mean(Peptide_Count_noSF),0),
                                                SD_Peptide_Count_noSF = sd(Peptide_Count_noSF)) %>%
                                         ungroup() %>%
@@ -408,9 +448,13 @@ MUS_pepnum_plot
 
 ```{r MUS_Peptide_Count_Plot3}
 #Plot noSF protein data similar to peptide bar graph below
-MUS_pepnum_plot2_df = MUS_peptide_df %>% group_by(Volume) %>%
-                                           summarise(Mean_Peptide_Count_noSF = round(mean(Peptide_Count_noSF),0),
-                                                      SD_Peptide_Count_noSF = sd(Peptide_Count_noSF)) %>%
+MUS_pepnum_plot2_df = MUS_pepnum_df %>% group_by(Volume) %>%
+                                          summarise(Mean_Peptide_Count_noSF = round(mean(Peptide_Count_noSF),0),
+                                                    SD_Peptide_Count_noSF = sd(Peptide_Count_noSF),
+                                                    Mean_Peptide_Count_2RepMin = round(mean(Peptide_Count_2RepMin),0),
+                                                    SD_Peptide_Count_2RepMin = sd(Peptide_Count_2RepMin),
+                                                    Mean_Peptide_Count_3RepMin = round(mean(Peptide_Count_3RepMin),0),
+                                                    SD_Peptide_Count_3RepMin = sd(Peptide_Count_3RepMin)) %>%
                                           pivot_longer(names_to = c(".value","FilterType"),
                                                        names_sep = c("_Peptide_Count_"),
                                                        -c("Volume")) %>%
@@ -435,7 +479,7 @@ MUS_pepnum_plot2
 
 \newline
 
-**Figure X: Peptide counts for murine samples across volume conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used.**
+**Figure X: Peptide counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used.**
 
 ```{r MUS_ANOVA_P1}
 #Transform data for anova
@@ -519,7 +563,8 @@ MUS_CV_df = seerXT_MUS_final_2Rep_df %>%
 #Plot CVs - by volume group
 MUS_CV_plot = MUS_CV_df %>%
   ggplot(aes(x = as.factor(Volume), y = CV, fill = as.factor(Volume))) +
-  geom_boxplot(outlier.shape = NA) +
+  geom_violin(alpha = 0.4) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
   labs(title = "Feature CV Distribution by Volume: Murine",
        subtitle = "Outliers are hidden",
        x = "Volume (µL)") +
@@ -533,8 +578,7 @@ MUS_CV_plot = MUS_CV_df %>%
   theme(axis.title = element_text(size = 14)) +
   theme(title = element_text(size = 14)) +
   theme(legend.position = "none")
-  #theme(legend.title = element_text(size = 14)) +
-  #theme(legend.text = element_text(size = 12)) 
+
 ggsave("./Plots/MUS_CV_plot.png", width = 7.29, height = 4.51, units = "in")
 MUS_CV_plot
 ```
@@ -725,17 +769,24 @@ WiT_boxDS_MUS_df = MUS_seerXT_WiT_df %>%
                                                                                                                                                           15,
                                                                                                                                                           NA))))))))))))))))
 
+#Make stat df for labels
+MUS_FCstats_df = WiT_boxDS_MUS_df %>% group_by(Dilution_Comparison) %>%
+                                      summarise(Median_FC = median(FC))
+                                      
+
 #Boxplot of intensity distributions per sample - mouse
 WiT_boxDS_MUS_plot = WiT_boxDS_MUS_df %>%
   ggplot(aes(x = reorder(Dilution_Comparison,Dilution_Comparison_Order), y = FC, fill = Dilution_Comparison)) +
-  geom_boxplot(alpha = 0.5) +
-  #geom_text(aes(label = median(FC))) +
+  geom_violin(alpha = 0.4) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  # geom_text(data = MUS_final, aes(x = Volume_uL, y = Mean_Log2_Raw_Intensity, label = round(Mean_Log2_Raw_Intensity,2))) +
+  geom_text(data = MUS_FCstats_df, aes(x = Dilution_Comparison, y = 8, label = round(Median_FC,2)), position = position_dodge(width=0.9),vjust = -0.5, size = 3) +
   labs(title = "FC Distribution: Mouse Sample Volume Experiment",
-       subtitle = "",
+       subtitle = "Medians shown at top of each distribution",
        y = "Log2(FC)") +
   theme_bw() +
   #stat_mean_sd_text(size = 2, y.pos = 6000) +
-  #ylim(0,6000) +
+  ylim(-10,10) +
   geom_hline(yintercept=0, colour="grey3", linetype = "dashed") +
   theme(legend.position = "none") +
   theme(axis.text.x = element_text(vjust = 0.5, size = 12, angle = 90)) +
@@ -743,6 +794,7 @@ WiT_boxDS_MUS_plot = WiT_boxDS_MUS_df %>%
   theme(axis.title.x = element_blank()) +
   theme(axis.title = element_text(vjust = 0.5, size = 14)) +
   theme(title = element_text(size = 14)) +
+  #stat_median_iqr_text(y.pos = 7.5, size = 3, angle=90) +
   scale_fill_viridis(discrete = TRUE)
 ggsave("./Plots/WiT_boxDS_MUS_Log2RawIntensity_plot.png", width = 4, height = 3, units = "in")
 WiT_boxDS_MUS_plot
@@ -750,7 +802,7 @@ WiT_boxDS_MUS_plot
 
 \newline
 
-**Figure X: Boxplot FC distributions of murine dilution series data. PG.Quantity (raw) data used.**
+**Figure X: Boxplot FC distributions of murine sample volume experiment series data. Numbers at the top of each distribution represent median values. PG.Quantity (raw) data used.**
 
 ```{r Plot_WiT_pval_MUS, fig.width=10, fig.height=20}
 #Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
@@ -1367,181 +1419,524 @@ ggsave("./Plots/fig_WiT_MUS_Log2RawIntensity.png", width = 8, height = 16, units
 
 ```
 
-### PC3_Gen1_SpLib vs PC3_XT_SpLib (old vs. new)
+### PC3 Protein and Peptide Counts
 
-```{r PC3_P1_Load_Data}
+```{r PC3_Load_Data}
+#Load each PC3 file
 raw_data_PC3_Gen1 = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_Gen1_SpLib/report.tsv")
 raw_data_PC3_XT_SpLib = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_SpLib/report.tsv")
+raw_data_PC3_XT_libfree = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_libfree/report.tsv")
+raw_data_PC3_XT_timsLib = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_timsLib/report.tsv")
+#Combine all raw files, keeping library as a new column
+raw_data_PC3_Gen1 = raw_data_PC3_Gen1 %>% mutate(Search_Method = "SpLib")
+raw_data_PC3_XT_SpLib = raw_data_PC3_XT_SpLib %>% mutate(Search_Method = "SpLib")
+raw_data_PC3_XT_libfree = raw_data_PC3_XT_libfree %>% mutate(Search_Method = "LibFree")
+raw_data_PC3_XT_timsLib = raw_data_PC3_XT_timsLib %>% mutate(Search_Method = "timsLib")
+raw_data_PC3 = rbind(raw_data_PC3_Gen1,raw_data_PC3_XT_SpLib,raw_data_PC3_XT_libfree,raw_data_PC3_XT_timsLib)
 ```
 
-```{r PC3_P1_Organize_Data}
-#PC3 Gen1 - DIANN raw data processing
-diann_PC3Gen1_subset = raw_data_PC3_Gen1 %>%
-                      #Filter out peptides with Precursor and Protein Group intensities of 0
-                      filter(Precursor.Quantity > 0) %>%
-                      filter(PG.Quantity > 0) %>%
-                      #Filter our any peptides & protein groups that have a Q value of > 0.01 (FDR 1%)
-                      filter(Global.PG.Q.Value < 0.01) %>%
-                      filter(Global.Q.Value < 0.01) %>%
-                      filter(Q.Value < 0.01)
+```{r PC3_Organize_Data}
+#PC3 - DIANN raw data processing
+diann_PC3_subset = raw_data_PC3 %>%
+                    #Filter out peptides with Precursor and Protein Group intensities of 0
+                    filter(Precursor.Quantity > 0) %>%
+                    filter(PG.Quantity > 0) %>%
+                    #Filter our any peptides & protein groups that have a Q value of > 0.01 (FDR 1%)
+                    filter(Global.PG.Q.Value < 0.01) %>%
+                    filter(Global.Q.Value < 0.01) %>%
+                    filter(Q.Value < 0.01)
 
-#PC3 XT SpLib - DIANN raw data processing
-diann_PC3XTSpLib_subset = raw_data_PC3_XT_SpLib %>%
-                      #Filter out peptides with Precursor and Protein Group intensities of 0
-                      filter(Precursor.Quantity > 0) %>%
-                      filter(PG.Quantity > 0) %>%
-                      #Filter our any peptides & protein groups that have a Q value of > 0.01 (FDR 1%)
-                      filter(Global.PG.Q.Value < 0.01) %>%
-                      filter(Global.Q.Value < 0.01) %>%
-                      filter(Q.Value < 0.01)
+#PC3 - Make new Sample, NP, replicate columns in data df with grep/substring
+diann_PC3_subset = diann_PC3_subset %>%
+                   mutate(Sample = ifelse(grepl("Old_Kit",Run),
+                                          sub("[0-9]*_(.*)_NP[0-9].*","\\1",Run),
+                                          sub("^[0-9]*_(.*)([A-Z])_NP.*","\\1",Run)),
+                           NP = sub("[0-9]*_.*_NP(.).*","\\1",Run),
+                           Replicate = ifelse(grepl("Old_Kit",Run),
+                                              "A",
+                                              sub("^[0-9]*_.*([A-Z])_NP.*","\\1",Run)),
+                           Sample = paste(sub("neat","XT",Sample),Search_Method,Replicate,sep = "_"))
 
-#PC3 Gen1 - Make new Sample, NP, replicate columns in data df with grep/substring
-diann_PC3Gen1_subset = diann_PC3Gen1_subset %>% mutate(Sample = sub("[0-9]*_(.*)_NP[0-9].*","\\1",Run),
-                                                       NP = sub("[0-9]*_.*_NP(.).*","\\1",Run),
-                                                       Replicate = "A")
-
-#PC3 XT SpLib - Make new Sample, NP, replicate columns in data df with grep/substring
-diann_PC3XTSpLib_subset = diann_PC3XTSpLib_subset %>% mutate(Sample = sub("^[0-9]*_(.*)([A-Z])_NP.*","\\1",Run),
-                                                             NP = sub("[0-9]*_.*_NP(.).*","\\1",Run),
-                                                             Replicate = sub("^[0-9]*_.*([A-Z])_NP.*","\\1",Run))
-
-#PC3 Gen1 - Convert output to summarized protein info by removing duplicate peptides
-PC3Gen1_proteins = diann_PC3Gen1_subset %>%
+#PC3 - Convert output to summarized protein info by removing duplicate peptides
+PC3_proteins = diann_PC3_subset %>%
                 group_by(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value) %>%
                 distinct(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value, .keep_all = TRUE) %>%
                 ungroup() %>%
                 mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
                 filter(!is.na(Log2_LFQ_Intensity))
 
-#PC3 XT SpLib - Convert output to summarized protein info by removing duplicate peptides
-PC3XTSpLib_proteins = diann_PC3XTSpLib_subset %>%
-                group_by(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value) %>%
-                distinct(Run, Protein.Group, PG.Quantity, PG.Normalised, PG.MaxLFQ, PG.Q.Value, .keep_all = TRUE) %>%
-                ungroup() %>%
-                mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
-                filter(!is.na(Log2_LFQ_Intensity))
-
-#Combine PC3 Gen1 + XT SpLib data
-PC3_P1_proteins = rbind(PC3Gen1_proteins,PC3XTSpLib_proteins)
-
-# #PC3 Gen1 - Save protein data table - no sparsity filter
-write.table(PC3_P1_proteins, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/SeerXT_PC3P1_proteins.tsv", sep = "\t", row.names = FALSE)
+# Save protein data table - no sparsity filter (no replicates)
+write.table(PC3_proteins, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/SeerXT_PC3all_proteins.tsv", sep = "\t", row.names = FALSE)
 ```
 
-```{r PC3_P1_Sparsity_Filter}
-#Calculate number of replicates per volume
-# num_PC3P1_rep = n_distinct(PC3_P1_proteins$Sample)/n_distinct(PC3_P1_proteins$Volume)
-# 
-# #50% Sparsity Filter - flat version due to lack of Gen 1 replicates
-# seerXT_PC3P1_final_df = PC3_P1_proteins %>%
-#   mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
-#   group_by(Feature) %>%
-#   mutate(percent_detection = n_distinct(Sample)/num_MUS_rep) %>%
-#   ungroup() %>%
-#   filter(percent_detection >= 0.5)
-# 
-# #Save data after 50% sparsity filter
-# write.table(seerXT_MUS_final_2Rep_df, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/Murine_dilution/SeerXT_MUS_proteins_50SF.tsv", sep = "\t", row.names = FALSE)
-```
+**Table X: Peptide and protein counts for PC3 samples in Seer Proteograph method comparison study (Gen 1, XT SpLib, XT timsLib, XT libfree). PG.MaxLFQ (normalized) data used.**
 
-
-**Table X: Protein counts for PC3 samples in Seer Proteograph Gen 1 v. XT. PG.MaxLFQ (normalized) data used.**
-
-```{r PC3_P1_Num_Table}
+```{r PC3_Num_Table}
 #Create df for protein count table
-PC3_P1_protnum_df = PC3_P1_proteins %>% dplyr::select(c("Sample","Protein.Ids")) %>%
-                                             unique() %>%
-                                             dplyr::group_by(Sample) %>%
-                                             summarise(Protein_Count = n())
+PC3_protnum_df = PC3_proteins %>% dplyr::select(c("Sample","Protein.Ids")) %>%
+                                   unique() %>%
+                                   dplyr::group_by(Sample) %>%
+                                   summarise(Protein_Count = n())
 
-#Create df for peptide count table
-PC3_Gen1_peptide_df = diann_PC3Gen1_subset %>% 
+#Add peptide-level log2 intensity and NA filter
+PC3_peptide_df = diann_PC3_subset %>% 
                   mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
                   filter(!is.na(Log2_LFQ_Intensity))
 
-PC3XTSpLib_peptide_df = diann_PC3XTSpLib_subset %>% 
-                  mutate(Log2_LFQ_Intensity = ifelse(PG.MaxLFQ == 0, NA, log2(PG.MaxLFQ))) %>%
-                  filter(!is.na(Log2_LFQ_Intensity))
+#Create peptide count df
+PC3_pepnum_df = PC3_peptide_df %>% dplyr::select(c("Sample","Protein.Ids","Precursor.Id")) %>%
+                                   unique() %>%
+                                   dplyr::group_by(Sample) %>%
+                                   summarise(Peptide_Count = n())
 
-PC3_P1_pepnum_df = rbind(PC3_Gen1_peptide_df,PC3XTSpLib_peptide_df)
-PC3_P1_pepnum_df = PC3_P1_pepnum_df %>% dplyr::group_by(Sample) %>%
-                                        summarise(Peptide_Count = n())
+#Find number of proteins in common across all methods
+PC3_protnum_allMethod_df = PC3_proteins %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                dplyr::group_by(Protein.Ids,Method) %>%
+                                summarize(data = list(Log2_LFQ_Intensity), count = n(), .groups = "drop") %>%
+                                pivot_wider(names_from = Method, values_from = c(data,count)) %>%
+                                filter(count_PC3_Old_Kit_SpLib>=1 & count_PC3_XT_SpLib>=1 & count_PC3_XT_timsLib>=1 & count_PC3_XT_LibFree>=1)
 
-PC3_P1_counttable_df = PC3_P1_protnum_df
-knitr::kable(PC3_P1_counttable_df)
+#Combine protein count column with peptide count df for table
+PC3_counttable_df = merge(PC3_pepnum_df,PC3_protnum_df,by = "Sample")
+PC3_counttable_df["Protein_Count_1RepMinAllMethods"] = length(PC3_protnum_allMethod_df$Protein.Ids)
+
+knitr::kable(PC3_counttable_df)
 ```
 
-```{r MUS_Protein_Count_Plot, include=FALSE}
-
-MUS_protnum_plot_df = MUS_protnum_df %>% group_by(Volume) %>%
-                                          mutate(Mean_Protein_Count_noSF = round(mean(Protein_Count_noSF),0),
-                                                 Mean_Protein_Count_2RepMin = round(mean(Protein_Count_2RepMin),0),
-                                                 Mean_Protein_Count_3RepMin = round(mean(Protein_Count_3RepMin),0)) %>%
+```{r PC3_Protein_Count_Plot}
+#Create df for protein bar plot
+PC3_protnum_plot_df = PC3_protnum_df %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                          group_by(Method) %>%
+                                          mutate(Mean_Protein_Count_noSF = round(mean(Protein_Count),0)) %>%
                                           ungroup() %>%
-                                          dplyr::select(c("Volume","Mean_Protein_Count_noSF",
-                                                          "Mean_Protein_Count_2RepMin","Mean_Protein_Count_3RepMin")) %>%
-                                          unique() %>%
-                                          pivot_longer(names_to = c("FilterType"),
-                                                       values_to = c("Mean_Protein_Count"),
-                                                       cols = starts_with("Mean")) %>%
-                                          mutate(FilterType = sub("Mean_Protein_Count_","",FilterType))
+                                          dplyr::select(c("Method","Mean_Protein_Count_noSF")) %>%
+                                          unique()
 
 #Bar plot
-MUS_protnum_plot = ggplot(MUS_protnum_plot_df, aes(fill=FilterType, y=Mean_Protein_Count, x=reorder(as.factor(Volume),Volume))) + 
-  geom_bar(position = "nudge",stat="identity") + 
+PC3_protnum_plot = ggplot(PC3_protnum_plot_df, aes(fill=Method, y=Mean_Protein_Count_noSF, x=Method)) + 
+  geom_bar(position = "dodge",stat="identity") + 
+  geom_text(aes(y = Mean_Protein_Count_noSF + 100, label = Mean_Protein_Count_noSF)) +
   theme_bw() +
-  labs(x = "Volume (uL)",
-       y = "Mean Protein Count",
-       title = "Seer Proteograph XT Comparison: Protein Counts",
+  labs(x = "Method",
+       y = "Protein Count",
+       title = "Seer Proteograph XT Comparison: PC3 Protein Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
-ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot.png")
-MUS_protnum_plot
+ggsave("~/Code/XT_Comparison/Plots/PC3_protnum_plot.png")
+PC3_protnum_plot
+```
+\newline
+ 
+**Figure X: Protein counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used.**
 
-# \newline
-# 
-# **Figure X: Protein counts for murine samples across volume conditions. Colors represent different sparsity filters applied at the feature level across replicates for a sample (no filter, 2 replicate minimum, 3 replicate minimum).**
+```{r PC3_Peptide_Count_Plot}
+#Create df for peptide bar plot
+PC3_pepnum_plot_df = PC3_pepnum_df %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                          group_by(Method) %>%
+                                          mutate(Mean_Peptide_Count_noSF = round(mean(Peptide_Count),0)) %>%
+                                          ungroup() %>%
+                                          dplyr::select(c("Method","Mean_Peptide_Count_noSF")) %>%
+                                          unique()
+
+#Bar plot
+PC3_pepnum_plot = ggplot(PC3_pepnum_plot_df, aes(fill=Method, y=Mean_Peptide_Count_noSF, x=Method)) + 
+  geom_bar(position = "dodge",stat="identity") + 
+  geom_text(aes(y = Mean_Peptide_Count_noSF + 2000, label = Mean_Peptide_Count_noSF)) +
+  theme_bw() +
+  labs(x = "Method",
+       y = "Peptide Count",
+       title = "Seer Proteograph XT Comparison: PC3 Peptide Counts",
+       subtitle = "") +
+  scale_fill_viridis(discrete = TRUE) +
+  ylim(0,30000)
+ggsave("~/Code/XT_Comparison/Plots/PC3_pepnum_plot.png")
+PC3_pepnum_plot
+```
+\newline
+ 
+**Figure X: Peptide counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used.**
+
+### PC3 XT Search Method Comparison
+
+```{r PC3XT_SF}
+#No sparsity filter - create features
+PC3XT_feature_noSF_df = PC3_proteins %>%
+  mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+  filter(!Method == "PC3_Old_Kit_SpLib") %>%
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  group_by(Method,Feature) %>%
+  mutate(detection_repcount = n_distinct(Replicate)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 1)
+
+#2RepMin sparsity filter - create features
+PC3XT_feature_2RepMin_df = PC3_proteins %>%
+  mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+  filter(!Method == "PC3_Old_Kit_SpLib") %>%
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  group_by(Method,Feature) %>%
+  mutate(detection_repcount = n_distinct(Replicate)) %>%
+  ungroup() %>%
+  filter(detection_repcount >= 2)
 ```
 
-```{r MUS_Protein_Count_Plot3}
+```{r PC3_DataTransform}
+#Transform data to wide form for statistical test - using noSF data since only 2 replicates
+PC3_wide_df = PC3XT_feature_noSF_df %>% dplyr::group_by(Feature,Protein.Ids,Method) %>%
+                                            summarize(data = list(Log2_LFQ_Intensity), count = n(), .groups = "drop") %>%
+                                            pivot_wider(names_from = Method, values_from = c(data,count))
+
+#Filter out any features with <1 intensity count
+PC3_wide_allLib_df = PC3_wide_df %>% filter(count_PC3_XT_SpLib>=1 & count_PC3_XT_timsLib>=1 & count_PC3_XT_LibFree>=1)
+
+```
+
+**Table X: Feature counts for PC3 XT samples in Seer Proteograph method comparison study (SpLib, timsLib, libfree). PG.MaxLFQ (normalized) data used.**
+
+```{r PC3XT_Feature_Num_Table}
+#Create df for feature count table
+PC3XT_featnum_noSF_df = PC3XT_feature_noSF_df %>% dplyr::group_by(Sample) %>%
+                                                    summarise(Feature_Count_noSF = n())
+
+PC3XT_featnum_2Rep_df = PC3XT_feature_2RepMin_df %>% dplyr::group_by(Sample) %>%
+                                                    summarise(Feature_Count_2RepMin = n())
+
+PC3XT_featnum_df = merge(PC3XT_featnum_noSF_df,PC3XT_featnum_2Rep_df, by = "Sample")
+PC3XT_featnum_df["Feature_Count_1RepMin_AllMethods"] = length(PC3_wide_allLib_df$Feature)
+
+PC3XT_feattable_df = PC3XT_featnum_df
+knitr::kable(PC3XT_feattable_df)
+```
+
+```{r PC3XT_Feature_Count_Plot}
 #Plot noSF protein data similar to peptide bar graph below
-MUS_protnum_plot3_df = MUS_protnum_df %>% group_by(Volume) %>%
-                                           summarise(Mean_Protein_Count_noSF = round(mean(Protein_Count_noSF),0),
-                                                  SD_Protein_Count_noSF = sd(Protein_Count_noSF),
-                                                  Mean_Protein_Count_2RepMin = round(mean(Protein_Count_2RepMin),0),
-                                                  SD_Protein_Count_2RepMin = sd(Protein_Count_2RepMin),
-                                                  Mean_Protein_Count_3RepMin = round(mean(Protein_Count_3RepMin),0),
-                                                  SD_Protein_Count_3RepMin = sd(Protein_Count_3RepMin)) %>%
-                                          pivot_longer(names_to = c(".value","FilterType"),
-                                                       names_sep = c("_Protein_Count_"),
-                                                       -c("Volume")) %>%
-                                          mutate(FilterType = ifelse(FilterType == "noSF",
-                                                                      "1RepMin (no filter)",
-                                                                      FilterType))
+PC3XT_featnum_plot_df = PC3XT_featnum_df %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                              group_by(Method) %>%
+                                              summarise(Mean_Feature_Count_noSF = round(mean(Feature_Count_noSF),0),
+                                                        SD_Feature_Count_noSF = sd(Feature_Count_noSF),
+                                                        Mean_Feature_Count_2RepMin = round(mean(Feature_Count_2RepMin),0),
+                                                        SD_Feature_Count_2RepMin = sd(Feature_Count_2RepMin)) %>%
+                                              pivot_longer(names_to = c(".value","FilterType"),
+                                                          names_sep = c("_Feature_Count_"), -c("Method")) %>%
+                                              mutate(FilterType = ifelse(FilterType == "noSF",
+                                                                  "1RepMin (no filter)",
+                                                                  FilterType))
                                                                         
 #Bar plot
-MUS_protnum_plot3 = ggplot(MUS_protnum_plot3_df,
-                          aes(fill=FilterType, y=Mean, x=reorder(as.factor(Volume),Volume))) + 
+PC3XT_featnum_plot = ggplot(PC3XT_featnum_plot_df,
+                            aes(fill=FilterType, y=Mean, x=Method)) + 
   geom_bar(position = "dodge",stat="identity") + 
   geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", alpha=0.8, size=0.5, width = 0.4) +
   theme_bw() +
-  labs(x = "Volume (uL)",
-       y = "Mean Protein Count",
-       title = "Seer Proteograph XT Comparison: Protein Counts",
+  labs(x = "Method",
+       y = "Mean Feature Count",
+       title = "Seer Proteograph XT Comparison: PC3 XT Feature Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
-ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot3.png")
-MUS_protnum_plot3
+ggsave("~/Code/XT_Comparison/Plots/PC3XT_featnum_plot.png")
+PC3XT_featnum_plot
+```
+\newline
+
+**Figure X: Feature counts for PC3 XT samples across search method conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used.**
+
+```{r PC3XT_ANOVA_P1, include = FALSE}
+#Transform data for anova
+PC3XT_anova_df = PC3XT_feature_noSF_df %>% dplyr::group_by(Feature,Method) %>%
+                                            summarize(Mean_Log2_LFQ_Intensity = mean(Log2_LFQ_Intensity),
+                                                      count = n(), .groups = "drop")
+
+#Create linear model for aov() - (yValue ~ xValue)
+model = lm(Mean_Log2_LFQ_Intensity ~ Method, data = PC3XT_anova_df)
+PC3XT_anova = aov(model)
+
+#ANOVA Assumptions
+# 1. Homogeneity of variances - plot and Levene’s test
+plot(PC3XT_anova, 1)
+leveneTest(Mean_Log2_LFQ_Intensity ~ Method, data = PC3XT_anova_df)
+lt_pval = leveneTest(Mean_Log2_LFQ_Intensity ~ Method, data = PC3XT_anova_df)$`Pr(>F)`[1]
+# 2. Normality - plot and Shapiro-Wilk or Anderson-Darling test
+plot(PC3XT_anova, 2)
+PC3XT_anova_residuals = residuals(object = PC3XT_anova)
+# shapiro.test(x =PC3XT_anova_residuals) - for smaller sample sizes (<5000)
+# sh_pval = shapiro.test(PC3XT_anova_residuals)$p.value
+ad.test(PC3XT_anova_residuals)
+ad_pval = ad.test(PC3XT_anova_residuals)$p.value
+```
+
+```{r PC3XT_ANOVA_P2}
+# Tukey test to study each pair of treatment :
+PC3XT_tukey = TukeyHSD(PC3XT_anova, which = "Method", conf.level = 0.95)
+
+PC3XT_labels = generate_label_df(PC3XT_tukey, "Method") #generate labels using function
+
+names(PC3XT_labels) = c('Letters','Method')#rename columns for merging
+
+PC3XT_yvalue = aggregate(Mean_Log2_LFQ_Intensity~Method, data=PC3XT_anova_df, mean)# obtain letter position for y axis using means
+
+PC3XT_final = merge(PC3XT_labels,PC3XT_yvalue) #merge dataframes
+
+PC3XT_ANOVATukeyHSD_box_plot = ggplot(PC3XT_anova_df, aes(x = Method, y = Mean_Log2_LFQ_Intensity)) +
+  geom_blank() +
+  theme_bw() +
+  labs(x = 'Method', y = 'Mean Log2 LFQ Intensity') +
+  ggtitle(expression(atop(bold("Seer Proteograph XT: PC3 XT Search Method Comparison"), atop(italic("ANOVA TukeyHSD"), "")))) +
+  theme(plot.title = element_text(hjust = 0.5, face='bold')) +
+  geom_violin(data = PC3XT_anova_df, aes(x = Method, y = Mean_Log2_LFQ_Intensity, fill = Method), alpha = 0.4) +
+  geom_boxplot(aes(fill = Method), stat = "boxplot", outlier.shape = NA, alpha = 0.7) +
+  geom_text(data = PC3XT_final, aes(x = Method, y = Mean_Log2_LFQ_Intensity, label = Letters),vjust=-17,hjust=-1) +
+  geom_text(data = PC3XT_final, aes(x = Method, y = Mean_Log2_LFQ_Intensity, label = round(Mean_Log2_LFQ_Intensity,2))) +
+  scale_fill_viridis(discrete = TRUE) +
+  theme(plot.title = element_text(vjust=-0.6))
+PC3XT_ANOVATukeyHSD_box_plot
+ggsave("./Plots/PC3XT_ANOVATukeyHSD_LFQLog2Intensity_box_plot.png")
 ```
 
 \newline
 
-**Figure X: Protein counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used.**
+**Figure X: Combo box/violin plot for the PC3 XT search method comparison showing distributions of mean log2 LFQ intensities (averaged across 2 replicates per sample) separated on the x axis by search method. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (note: homogeneity of variance and normality assumptions are statistically invalid, so ANOVA is included here only as a visual aid to suggest possible pairwise differences). PG.MaxLFQ (normalized) data used.**
 
-### PC3_XT_SpLib vs PC3_XT_timsLib vs PC3_XT_libfree (all new, search methods 1 vs. 2 vs. 3)
+```{r PC3XT_CV}
+#Calculate CV per feature
+PC3XT_CV_df = PC3XT_feature_noSF_df %>%
+  group_by(Method,Feature) %>%
+  summarise(Mean = mean(Log2_LFQ_Intensity, na.rm = TRUE), SD = sd(Log2_LFQ_Intensity, na.rm = TRUE), CV = 100*sqrt(2^(log(2)*(SD^2))-1))
 
-```{r PC3_P2_Load_Data}
-#Already loaded Gen1 = raw_data_PC3_Gen1
-raw_data_PC3_XT_libfree = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_libfree/report.tsv")
-raw_data_PC3_XT_timsLib = read.delim("~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/PC3_XT_timsLib/report.tsv")
+#Plot CVs - by volume group
+PC3XT_CV_plot = PC3XT_CV_df %>%
+  ggplot(aes(x = Method, y = CV, fill = Method)) +
+  geom_violin(alpha = 0.4) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  labs(title = "Feature CV Distribution by Search Method: PC3 XT",
+       subtitle = "Outliers are hidden",
+       x = "Method") +
+  theme_bw() +
+  scale_fill_viridis(discrete = TRUE) +
+  ylim(0, 100) +
+  stat_mean_sd_text(y.pos = 90, size = 3, angle=90) +
+  theme(axis.text.x = element_text(size = 12)) +
+  theme(axis.text.y = element_text(size = 12)) +
+  theme(axis.title = element_text(size = 14)) +
+  theme(title = element_text(size = 14)) +
+  theme(legend.position = "none")
+
+ggsave("./Plots/PC3XT_CV_plot.png", width = 7.29, height = 4.51, units = "in")
+PC3XT_CV_plot
 ```
+\newline
+
+**Figure X: Feature CV distributions for PC3 XT search method comparison study, grouped by search method. PG.MaxLFQ (normalized) data used. No obvious change in CVs with change in search method.**
+
+```{r PC3XT_WiT}
+#Wilcox test - store pvalue and difference
+PC3XT_WiT_df = PC3_wide_allLib_df %>%
+  rowwise() %>%
+  mutate(wt_pval_SpLibvtimsLib = wilcox.test(unlist(data_PC3_XT_SpLib), unlist(data_PC3_XT_timsLib))$p.value) %>%
+  mutate(Diff_SpLibvtimsLib = (median(unlist(data_PC3_XT_SpLib)) - median(unlist(data_PC3_XT_timsLib)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_SpLibvtimsLib_BH = p.adjust(wt_pval_SpLibvtimsLib, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_SpLibvLibFree = wilcox.test(unlist(data_PC3_XT_SpLib), unlist(data_PC3_XT_LibFree))$p.value) %>%
+  mutate(Diff_SpLibvLibFree = (median(unlist(data_PC3_XT_SpLib)) - median(unlist(data_PC3_XT_LibFree)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_SpLibvLibFree_BH = p.adjust(wt_pval_SpLibvLibFree, method = "BH")) %>%
+  rowwise() %>%
+  mutate(wt_pval_timsLibvLibFree = wilcox.test(unlist(data_PC3_XT_timsLib), unlist(data_PC3_XT_LibFree))$p.value) %>%
+  mutate(Diff_timsLibvLibFree = (median(unlist(data_PC3_XT_timsLib)) - median(unlist(data_PC3_XT_LibFree)))) %>%
+  ungroup() %>%
+  mutate(wt_pval_timsLibvLibFree_BH = p.adjust(wt_pval_timsLibvLibFree, method = "BH"))
+
+#Add significance flags to WiT df
+PC3XT_WiT_df = PC3XT_WiT_df %>%
+  mutate(p_val_SpLibvtimsLib_sig = ifelse(wt_pval_SpLibvtimsLib_BH < 0.05, "Significant", "Non"),
+         proteins_SpLibvtimsLib_sig = ifelse(wt_pval_SpLibvtimsLib_BH < 0.05, Protein.Ids, ""),
+         p_val_SpLibvLibFree_sig = ifelse(wt_pval_SpLibvLibFree_BH < 0.05, "Significant", "Non"),
+         proteins_SpLibvLibFree_sig = ifelse(wt_pval_SpLibvLibFree_BH < 0.05, Protein.Ids, ""),
+         p_val_timsLibvLibFree_sig = ifelse(wt_pval_timsLibvLibFree_BH < 0.05, "Significant", "Non"),
+         proteins_timsLibvLibFree_sig = ifelse(wt_pval_timsLibvLibFree_BH < 0.05, Protein.Ids, "")
+        )
+```
+
+```{r Plot_PC3XT_boxplot}
+#Organize FC in long format
+WiT_boxDS_PC3XT_df = PC3XT_WiT_df %>% 
+                   pivot_longer(names_to = "Method_Comparison",
+                                values_to = "FC",
+                                cols = starts_with("Diff")) %>%
+                    mutate(Method_Comparison = ifelse(Method_Comparison == "Diff_SpLibvtimsLib",
+                                                        "SpLib-timsLib",
+                                                        ifelse(Method_Comparison == "Diff_SpLibvLibFree",
+                                                               "SpLib-LibFree",
+                                                               ifelse(Method_Comparison == "Diff_timsLibvLibFree",
+                                                                      "timsLib-LibFree",
+                                                                      NA))))
+#Make stat df for labels
+PC3XT_FCstats_df = WiT_boxDS_PC3XT_df %>% group_by(Method_Comparison) %>%
+                                      summarise(Median_FC = median(FC))
+
+#Boxplot of intensity distributions per sample - mouse
+WiT_boxDS_PC3XT_plot = WiT_boxDS_PC3XT_df %>%
+  ggplot(aes(x = Method_Comparison, y = FC, fill = Method_Comparison)) +
+  geom_violin(alpha = 0.4) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  # geom_text(data = MUS_final, aes(x = Volume_uL, y = Mean_Log2_Raw_Intensity, label = round(Mean_Log2_Raw_Intensity,2))) +
+  geom_text(data = PC3XT_FCstats_df, aes(x = Method_Comparison, y = 6, label = round(Median_FC,2)), position = position_dodge(width=0.9),vjust = -0.5, size = 3) +
+  labs(title = "FC Distribution: PC3 XT Search Method Comparison",
+       subtitle = "Medians shown at top of each distribution",
+       y = "Log2(FC)") +
+  theme_bw() +
+  #stat_mean_sd_text(size = 2, y.pos = 6000) +
+  ylim(-6,6) +
+  geom_hline(yintercept=0, colour="grey3", linetype = "dashed") +
+  theme(legend.position = "none") +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title.x = element_blank()) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14)) +
+  scale_fill_viridis(discrete = TRUE)
+ggsave("./Plots/WiT_boxDS_PC3XT_Log2LFQIntensity_plot.png", width = 4, height = 3, units = "in")
+WiT_boxDS_PC3XT_plot
+```
+\newline
+
+**Figure X: Boxplot FC distributions of PC3 XT search method comparison data. Numbers at the top of each distribution represent median values. PG.MaxLFQ (normalized) data used.**
+
+```{r Plot_WiT_pval_PC3XT, fig.width=8, fig.height=4}
+#Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
+WiT_pval_SpLibvtimsLib_dist_plot = PC3XT_WiT_df %>%
+  ggplot(aes(wt_pval_SpLibvtimsLib)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "SpLib vs. timsLib") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_SpLibvtimsLib_dist_mouse_plot.png")
+
+WiT_pval_SpLibvLibFree_dist_plot = PC3XT_WiT_df %>%
+  ggplot(aes(wt_pval_SpLibvLibFree)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "SpLib vs. LibFree") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_SpLibvLibFree_dist_mouse_plot.png")
+
+WiT_pval_timsLibvLibFree_dist_plot = PC3XT_WiT_df %>%
+  ggplot(aes(wt_pval_timsLibvLibFree)) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  geom_histogram(breaks = seq(0,1,0.05), fill = "#22c6c9", color = "black", alpha = 0.5) +
+  labs(x = "",
+       y = "",
+       title = "",
+       subtitle = "timslib vs. LibFree") +
+  theme(plot.subtitle = element_text(face = "italic"))
+#ggsave("WiT_pval_timsLibvLibFree_dist_mouse_plot.png")
+
+fig_pval_PC3XT = ggarrange(WiT_pval_SpLibvtimsLib_dist_plot, WiT_pval_SpLibvLibFree_dist_plot, WiT_pval_timsLibvLibFree_dist_plot,
+                          labels="AUTO", ncol = 3, nrow = 1)
+annotate_figure(fig_pval_PC3XT, top = text_grob("P-Value Distribution of Wilcox Test Results: PC3 XT", size = 14))
+ggsave("./Plots/fig_pval_PC3XT_Log2LFQIntensity.png", width = 8, height = 16)
+```
+
+\newline
+
+**Figure X: P-value distributions for Wilcox tests performed on the PC3 XT search method comparison data. Log2-transformed data. PG.MaxLFQ (normalized) data used.**
+
+```{r Plot_WiT_volc_PC3XT, fig.width=8, fig.height=4}
+#Wilcox volcano Plot
+WiT_SpLibvtimsLib_volcano_plot = PC3XT_WiT_df %>%
+  ggplot(aes(x = Diff_SpLibvtimsLib, y = -log(wt_pval_SpLibvtimsLib_BH, 10), group = p_val_SpLibvtimsLib_sig)) +
+  geom_point(aes(color = p_val_SpLibvtimsLib_sig, text = proteins_SpLibvtimsLib_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_SpLibvtimsLib_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "-log10(p-value)",
+       subtitle = "SpLib vs. timsLib") +
+  theme_bw() +
+  xlim(-10,10) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_SpLibvtimsLib_mouse_volcano_plot.png")
+# WiT_SpLibvtimsLib_mouse_volcano_plot
+
+# WiT_SpLibvtimsLib_mouse_volcano_plotly = ggplotly(WiT_SpLibvtimsLib_mouse_volcano_plot, tooltip = "proteins_SpLibvtimsLib_sig")
+# saveWidget(WiT_SpLibvtimsLib_mouse_volcano_plotly, "./Plots/WiT_SpLibvtimsLib_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_SpLibvLibFree_volcano_plot = PC3XT_WiT_df %>%
+  ggplot(aes(x = Diff_SpLibvLibFree, y = -log(wt_pval_SpLibvLibFree_BH, 10), group = p_val_SpLibvLibFree_sig)) +
+  geom_point(aes(color = p_val_SpLibvLibFree_sig, text = proteins_SpLibvLibFree_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_SpLibvLibFree_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "SpLib vs. LibFree") +
+  theme_bw() +
+  xlim(-10,10) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_SpLibvLibFree_mouse_volcano_plot.png")
+# WiT_SpLibvLibFree_mouse_volcano_plot
+
+# WiT_SpLibvLibFree_mouse_volcano_plotly = ggplotly(WiT_SpLibvLibFree_mouse_volcano_plot, tooltip = "proteins_SpLibvLibFree_sig")
+# saveWidget(WiT_SpLibvLibFree_mouse_volcano_plotly, "WiT_SpLibvLibFree_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+WiT_timsLibvLibFree_volcano_plot = PC3XT_WiT_df %>%
+  ggplot(aes(x = Diff_timsLibvLibFree, y = -log(wt_pval_timsLibvLibFree_BH, 10), group = p_val_timsLibvLibFree_sig)) +
+  geom_point(aes(color = p_val_timsLibvLibFree_sig, text = proteins_timsLibvLibFree_sig), size = 2, alpha = 0.5) +
+  geom_hline(yintercept = -log(0.05, 10), linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2, color = "red", linetype = "dashed") +
+  geom_vline(xintercept = -2, color = "red", linetype = "dashed") +
+  geom_text_repel(aes(label = proteins_timsLibvLibFree_sig), max.overlaps = 20) +
+  scale_color_manual(values = c("black", "red")) +
+  labs(title = "",
+       x = "Log2(FC)",
+       y = "",
+       subtitle = "timsLib vs. LibFree") +
+  theme_bw() +
+  xlim(-10,10) +
+  theme(legend.position = "none") +
+  theme(plot.subtitle = element_text(face = "italic")) +
+  theme(axis.text.x = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.text.y = element_text(vjust = 0.5, size = 12)) +
+  theme(axis.title = element_text(vjust = 0.5, size = 14)) +
+  theme(title = element_text(size = 14))
+#ggsave("WiT_timsLibvLibFree_mouse_volcano_plot.png")
+# WiT_timsLibvLibFree_mouse_volcano_plot
+
+# WiT_timsLibvLibFree_mouse_volcano_plotly = ggplotly(WiT_timsLibvLibFree_mouse_volcano_plot, tooltip = "proteins_timsLibvLibFree_sig")
+# saveWidget(WiT_timsLibvLibFree_mouse_volcano_plotly, "WiT_timsLibvLibFree_mouse_volcano_plotly.html", selfcontained = F, libdir = "lib")
+
+fig_WiT_PC3XT = ggarrange(WiT_SpLibvtimsLib_volcano_plot, WiT_SpLibvLibFree_volcano_plot, WiT_timsLibvLibFree_volcano_plot,
+                        ncol = 3, nrow = 1)
+annotate_figure(fig_WiT_PC3XT, top = text_grob("Seer Proteograph XT PC3 DE: Search Method Comparison", size = 18))
+ggsave("./Plots/fig_WiT_PC3XT_Log2LFQIntensity.png", width = 8, height = 16, units = "in")
+```
+
+\newline
+
+**Figure X: Volcano plots showing significantly differentially expressed proteins between PC3 XT samples in search method comparison experiment. Log2-transformed data. PG.MaxLFQ (normalized) data used.**
+
