@@ -32,6 +32,8 @@ library(multcompView)
 library(viridis)
 library(car)
 library(nortest)
+library(ggVennDiagram)
+library(VennDiagram)
 ```
 
 ```{r MUS_Load_Data}
@@ -127,7 +129,7 @@ seerXT_MUS_wide_allV_df = seerXT_MUS_wide_df %>% filter(count_10uL>=1 & count_25
 
 ```
 
-**Table X: Feature counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
+**Table 1: Feature counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
 
 ```{r MUS_Feature_Num_Table}
 #Create df for feature count table
@@ -144,7 +146,7 @@ MUS_featnum_3Rep_df = seerXT_MUS_final_3Rep_df %>% dplyr::group_by(Sample) %>%
 MUS_featnum_df = merge(MUS_featnum_df,MUS_featnum_3Rep_df,by = "Sample")
 MUS_featnum_df["Feature_Count_1RepMin_AllVolumes"] = length(seerXT_MUS_wide_allV_df$Feature)
 
-MUS_feattable_df = MUS_featnum_df %>% dplyr::select(-Volume)
+MUS_feattable_df = MUS_featnum_df %>% arrange(Volume) %>% dplyr::select(-Volume)
 knitr::kable(MUS_feattable_df)
 ```
 
@@ -169,7 +171,7 @@ MUS_featnum_plot = ggplot(MUS_featnum_plot_df, aes(fill=FilterType, y=Mean_Featu
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Feature Count",
-       title = "Seer Proteograph XT Comparison: Feature Counts",
+       title = "Seer Proteograph XT Comparison: Murine Feature Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_featnum_plot.png")
@@ -195,7 +197,7 @@ MUS_featnum_plot2 = ggplot(MUS_featnum_plot2_df,
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Feature Count",
-       title = "Seer Proteograph XT Comparison: Feature Counts",
+       title = "Seer Proteograph XT Comparison: Murine Feature Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_featnum_plot2.png")
@@ -227,12 +229,12 @@ MUS_featnum_plot3_df = MUS_featnum_df %>% group_by(Volume) %>%
 #Bar plot
 MUS_featnum_plot3 = ggplot(MUS_featnum_plot3_df,
                           aes(fill=FilterType, y=Mean, x=reorder(as.factor(Volume),Volume))) + 
-  geom_bar(position = "dodge",stat="identity") + 
+  geom_bar(position = "dodge",stat="identity", alpha = 0.85) + 
   geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", alpha=0.8, size=0.5, width = 0.4) +
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Feature Count",
-       title = "Seer Proteograph XT Comparison: Feature Counts",
+       title = "Seer Proteograph XT Comparison: Murine Feature Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_featnum_plot3.png")
@@ -241,11 +243,11 @@ MUS_featnum_plot3
 
 \newline
 
-**Figure X: Feature counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used.**
+**Figure 1: Feature counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used. Sample volumes 100-250µL have the highest feature counts.**
 
 \newline
 
-**Table X: Protein counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
+**Table 2: Protein counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
 
 ```{r MUS_Protein_Num_Table}
 #Create df for protein count table
@@ -268,7 +270,7 @@ MUS_protnum_3Rep_df = seerXT_MUS_final_3Rep_df %>% dplyr::select(c("Sample","Vol
 MUS_protnum_df = merge(MUS_protnum_df,MUS_protnum_3Rep_df,by = "Sample")
 MUS_protnum_df["Protein_Count_1RepMin_AllVolumes"] = length(unique(seerXT_MUS_wide_allV_df$Protein.Ids))
 
-MUS_prottable_df = MUS_protnum_df %>% dplyr::select(-Volume)
+MUS_prottable_df = MUS_protnum_df %>% arrange(Volume) %>% dplyr::select(-Volume)
 knitr::kable(MUS_prottable_df)
 ```
 
@@ -293,7 +295,7 @@ MUS_protnum_plot = ggplot(MUS_protnum_plot_df, aes(fill=FilterType, y=Mean_Prote
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Protein Count",
-       title = "Seer Proteograph XT Comparison: Protein Counts",
+       title = "Seer Proteograph XT Comparison: Murine Protein Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot.png")
@@ -319,7 +321,7 @@ MUS_protnum_plot2 = ggplot(MUS_protnum_plot2_df,
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Protein Count",
-       title = "Seer Proteograph XT Comparison: Protein Counts",
+       title = "Seer Proteograph XT Comparison: Murine Protein Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot2.png")
@@ -349,12 +351,12 @@ MUS_protnum_plot3_df = MUS_protnum_df %>% group_by(Volume) %>%
 #Bar plot
 MUS_protnum_plot3 = ggplot(MUS_protnum_plot3_df,
                           aes(fill=FilterType, y=Mean, x=reorder(as.factor(Volume),Volume))) + 
-  geom_bar(position = "dodge",stat="identity") + 
-  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", alpha=0.8, size=0.5, width = 0.4) +
+  geom_bar(position = "dodge",stat="identity", alpha = 0.85) + 
+  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", size=0.5, width = 0.4) +
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Protein Count",
-       title = "Seer Proteograph XT Comparison: Protein Counts",
+       title = "Seer Proteograph XT Comparison: Murine Protein Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_protnum_plot3.png")
@@ -363,11 +365,11 @@ MUS_protnum_plot3
 
 \newline
 
-**Figure X: Protein counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used.**
+**Figure 2: Protein counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used. Sample volumes 100-250µL have the highest protein counts.**
 
 \newline
 
-**Table X: Peptide counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
+**Table 3: Peptide counts for murine samples in volume experiment. PG.Quantity (raw) data used.**
 
 ```{r MUS_Peptide_Num_Table}
 #Create df for peptide count table
@@ -379,46 +381,49 @@ MUS_peptide_df = diann_MUS_subset %>%
 
 #No Sparsity Filter
 MUS_peptide_1Rep_df = MUS_peptide_df  %>%
-  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
-  group_by(Feature,Volume) %>%
+  mutate(Protein_Peptide = paste(Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Protein_Peptide,Volume) %>%
   mutate(detection_repcount = n_distinct(Sample)) %>%
   ungroup() %>%
   filter(detection_repcount >= 1)
 
 #3RepMin Sparsity Filter - by volume - feature appears in all 3 replicates
 MUS_peptide_3Rep_df = MUS_peptide_df  %>%
-  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
-  group_by(Feature,Volume) %>%
+  mutate(Protein_Peptide = paste(Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Protein_Peptide,Volume) %>%
   mutate(detection_repcount = n_distinct(Sample)) %>%
   ungroup() %>%
   filter(detection_repcount == 3)
 
 #2RepMin Sparsity Filter - by volume - feature appears in >=2 replicates (use for analytics going forward)
 MUS_peptide_2Rep_df = MUS_peptide_df  %>%
-  mutate(Feature = paste(NP, Protein.Ids, Precursor.Id, sep = "_")) %>%
-  group_by(Feature,Volume) %>%
+  mutate(Protein_Peptide = paste(Protein.Ids, Precursor.Id, sep = "_")) %>%
+  group_by(Protein_Peptide,Volume) %>%
   mutate(detection_repcount = n_distinct(Sample)) %>%
   ungroup() %>%
   filter(detection_repcount >= 2)
 
 #Create df for peptide count table
 MUS_pepnum_noSF_df = MUS_peptide_1Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             unique() %>%
                                              dplyr::group_by(Sample,Volume) %>%
                                              summarise(Peptide_Count_noSF = n())
 
 MUS_pepnum_2Rep_df = MUS_peptide_2Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             unique() %>%
                                              dplyr::group_by(Sample) %>%
                                              summarise(Peptide_Count_2RepMin = n())
 
 MUS_pepnum_df = merge(MUS_pepnum_noSF_df,MUS_pepnum_2Rep_df, by = "Sample")
 # Add other sparsity filter data to table
 MUS_pepnum_3Rep_df = MUS_peptide_3Rep_df %>% dplyr::select(c("Sample","Volume","Protein.Ids","Precursor.Id")) %>%
+                                             unique() %>%
                                              dplyr::group_by(Sample) %>%
                                              summarise(Peptide_Count_3RepMin = n())
 
 MUS_pepnum_df = merge(MUS_pepnum_df,MUS_pepnum_3Rep_df,by = "Sample")
 
-MUS_peptable_df = MUS_pepnum_df %>% dplyr::select(-Volume)
+MUS_peptable_df = MUS_pepnum_df %>% arrange(Volume) %>% dplyr::select(-Volume)
 knitr::kable(MUS_peptable_df)
 ```
 
@@ -436,7 +441,7 @@ MUS_pepnum_plot = ggplot(MUS_pepnum_plot_df, aes(fill=Replicate, y=Peptide_Count
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Peptide Count",
-       title = "Seer Proteograph XT Comparison: Peptide Counts",
+       title = "Seer Proteograph XT Comparison: Murine Peptide Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_pepnum_plot.png")
@@ -444,7 +449,7 @@ MUS_pepnum_plot
 ```
 \newline
 
-**Figure X: Peptide counts for murine samples across volume conditions. Colors represent different replicates (A, B, C) for each volume. No sparsity filter is applied. PG.Quantity (raw) data used.**
+**Figure 3: Peptide counts for murine samples across volume conditions. Colors represent different replicates (A, B, C) for each volume. No sparsity filter is applied. PG.Quantity (raw) data used.**
 
 ```{r MUS_Peptide_Count_Plot3}
 #Plot noSF protein data similar to peptide bar graph below
@@ -465,12 +470,12 @@ MUS_pepnum_plot2_df = MUS_pepnum_df %>% group_by(Volume) %>%
 #Bar plot
 MUS_pepnum_plot2 = ggplot(MUS_pepnum_plot2_df,
                           aes(fill=FilterType, y=Mean, x=reorder(as.factor(Volume),Volume))) + 
-  geom_bar(position = "dodge",stat="identity") + 
-  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", alpha=0.8, size=0.5, width = 0.4) +
+  geom_bar(position = "dodge",stat="identity", alpha = 0.85) + 
+  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", size=0.5, width = 0.4) +
   theme_bw() +
   labs(x = "Volume (uL)",
        y = "Mean Peptide Count",
-       title = "Seer Proteograph XT Comparison: Peptide Counts",
+       title = "Seer Proteograph XT Comparison: Murine Peptide Counts",
        subtitle = "") +
   scale_fill_viridis(discrete = TRUE)
 ggsave("~/Code/XT_Comparison/Plots/MUS_pepnum_plot2.png")
@@ -479,9 +484,9 @@ MUS_pepnum_plot2
 
 \newline
 
-**Figure X: Peptide counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used.**
+**Figure 4: Peptide counts for murine samples across volume conditions. Colors represent different sparsity filters (no filter, 2 replicate minimum, 3 replicate minimum). Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.Quantity (raw) data used. Sample volumes 100-250µL have the highest peptide counts.**
 
-```{r MUS_ANOVA_P1}
+```{r MUS_ANOVA_P1, include = FALSE}
 #Transform data for anova
 seerXT_MUS_anova_df = seerXT_MUS_final_2Rep_df %>% mutate(Volume_uL = paste(Volume,"uL",sep="")) %>%
                                                 dplyr::group_by(Feature,Volume_uL,Volume) %>%
@@ -516,11 +521,12 @@ MUS_anova_residuals = residuals(object = MUS_anova)
 #shapiro.test(x = MUS_anova_residuals) - sample size too large for this
 ad.test(MUS_anova_residuals)
 ad_pval = ad.test(MUS_anova_residuals)$p.value
+
+
+# \newline
+# 
+# **Figure X: Plots and tests assessing the validity of the ANOVA test assumptions. Homogeneity of variances assumption is valid given absence of outliers on first plot and Levene's test p-value `r round(lt_pval,2)` > $\alpha$ = 0.05. Normality assumption is acceptable given a relatively normal line on the normality plot and knowing that a log2 transformation has already been applied to this data, despite Anderson-Darling test resulting in p-value < `r round(ad_pval,4)`. PG.Quantity (raw) data used.**
 ```
-
-\newline
-
-**Figure X: Plots and tests assessing the validity of the ANOVA test assumptions. Homogeneity of variances assumption is valid given absence of outliers on first plot and Levene's test p-value `r round(lt_pval,2)` > $\alpha$ = 0.05. Normality assumption is acceptable given a relatively normal line on the normality plot and knowing that a log2 transformation has already been applied to this data, despite Anderson-Darling test resulting in p-value < `r round(ad_pval,4)`. PG.Quantity (raw) data used.**
 
 ```{r MUS_ANOVA_P2}
 # Tukey test to study each pair of treatment :
@@ -552,7 +558,7 @@ ggsave("./Plots/MUS_ANOVATukeyHSD_rawLog2Intensity_box_plot.png")
 
 \newline
 
-**Figure X: Combo box/violin plot for the murine sample volume experiment data showing distributions of mean log2 raw intensities (averaged across 3 replicates per sample) separated on the x axis by sample volume. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test. PG.Quantity (raw) data used.**
+**Figure 5: Combo box/violin plot for the murine sample volume experiment data showing distributions of mean log2 raw intensities (averaged across 3 replicates per sample) separated on the x axis by sample volume. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (homogeneity of variance assumption is valid, normality assumption is close enough given log2 transformation). PG.Quantity (raw) data used. ANOVA results suggest the 100-250µL distributions are significantly different from the 10-50µL distributions, and the 250µL distribution is significantly different from the 100-125µL distributions.**
 
 ```{r MUS_CV}
 #Calculate CV per feature
@@ -584,7 +590,7 @@ MUS_CV_plot
 ```
 \newline
 
-**Figure X: Feature CV distributions for murine sample volume experiment series, grouped by volume sample. PG.Quantity (raw) data used. No obvious change in CVs with change in sample volume suggests decreasing sample size does not increase technical variability of the Seer Proteograph XT assay.**
+**Figure 6: Feature CV distributions for murine sample volume experiment series, grouped by volume sample. PG.Quantity (raw) data used. No obvious change in CVs with change in sample volume suggests decreasing sample size does not increase technical variability of the Seer Proteograph XT assay.**
 
 ```{r MUS_WiT}
 #Wilcox test - store pvalue and difference
@@ -802,7 +808,7 @@ WiT_boxDS_MUS_plot
 
 \newline
 
-**Figure X: Boxplot FC distributions of murine sample volume experiment series data. Numbers at the top of each distribution represent median values. PG.Quantity (raw) data used.**
+**Figure 7: Boxplot FC distributions of murine sample volume experiment series data. Numbers at the top of each distribution represent median values. PG.Quantity (raw) data used. Due to experimental design of sample prep/NP incubation, FC distributions are not expected to be exactly on target for the expected dilution FC. No extreme outliers are observed in FC distribution trend across all comparisons, and distribution IQRs widen with increased difference between the sample volumes being compared.**
 
 ```{r Plot_WiT_pval_MUS, fig.width=10, fig.height=20}
 #Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
@@ -998,7 +1004,7 @@ ggsave("./Plots/fig_pval_MUS_Log2RawIntensity.png", width = 8, height = 16)
 
 \newline
 
-**Figure X: P-value distributions for Wilcox tests performed on the mouse dilution series. Log2-transformed data, FC = (low volume - high volume). PG.Quantity (raw) data used.**
+**Figure 8: P-value distributions for Wilcox tests performed on the mouse dilution series. Log2-transformed data, FC = (low volume - high volume). PG.Quantity (raw) data used. On the feature level, no concerns with performing subsequent Wilcox test comparisons. 100-125µL comparison is likely seeing less-significant results due to close similarity in volume/FC.**
 
 ```{r Plot_WiT_volc_MUS, fig.width=20, fig.height=40}
 #Wilcox volcano Plot
@@ -1404,7 +1410,7 @@ ggsave("./Plots/fig_WiT_MUS_Log2RawIntensity.png", width = 8, height = 16, units
 
 \newline
 
-**Figure X: Volcano plots showing significantly differentially expressed proteins between mouse samples in sample volume experiment. Log2-transformed data, FC = (low volume - high volume). PG.Quantity (raw) data used.**
+**Figure 9: Volcano plots showing significantly differentially expressed proteins between mouse samples in sample volume experiment. Log2-transformed data, FC = (low volume - high volume). PG.Quantity (raw) data used. No features found to be significantly different between any sample volume comparisons.**
 
 ```{r MUS_Volume_Features, include = FALSE}
 #Figure out which features are only present in high volume samples - after sparsity filter (2Rep min/sample)
@@ -1469,7 +1475,7 @@ PC3_proteins = diann_PC3_subset %>%
 write.table(PC3_proteins, "~/Code/XT_Comparison/20240207_Murine_Liver_Expl_Plasma/Data/SeerXT_PC3all_proteins.tsv", sep = "\t", row.names = FALSE)
 ```
 
-**Table X: Peptide and protein counts for PC3 samples in Seer Proteograph method comparison study (Gen 1, XT SpLib, XT timsLib, XT libfree). PG.MaxLFQ (normalized) data used.**
+**Table 4: Peptide and protein counts for PC3 samples in Seer Proteograph method comparison study (Gen 1, XT SpLib, XT timsLib, XT libfree). PG.MaxLFQ (normalized) data used.**
 
 ```{r PC3_Num_Table}
 #Create df for protein count table
@@ -1527,7 +1533,29 @@ PC3_protnum_plot
 ```
 \newline
  
-**Figure X: Protein counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used.**
+**Figure 10: Protein counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used. Gen1 has the highest protien count, followed by XT_SpLib. XT_LibFree and XT_timsLib have slightly lower counts.**
+
+```{r PC3_ProteinVenn_Plot}
+#Create Venn diagram for protein counts - Gen 1 vs XT (SpLib)
+PC3_protvenn_df = PC3_proteins %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                   filter(Method == "PC3_Old_Kit_SpLib" | Method == "PC3_XT_SpLib") %>%
+                                   dplyr::select(c("Method","Protein.Ids")) %>%
+                                   unique() %>%
+                                   pivot_wider(names_from = Method, values_from = Protein.Ids)
+
+PC3_protvenn_list = list(PC3_Old_Kit_SpLib = unlist(PC3_protvenn_df$PC3_Old_Kit_SpLib[1]),
+                         PC3_XT_SpLib = unlist(PC3_protvenn_df$PC3_XT_SpLib[1]))
+PC3_protvenn_plot = ggVennDiagram(PC3_protvenn_list, color = "black", lwd = 0.8, lty = 1,
+                                  category.names = c("G1","XT")) +
+                        scale_fill_gradient(low = "#F4FAFE", high = "#4981BF") +
+                        labs(title = "Seer Proteograph Comparison: Gen 1 vs. XT SpLib") +
+                        theme(legend.position = "none")
+ggsave("~/Code/XT_Comparison/Plots/PC3_protvenn_plot.png")
+PC3_protvenn_plot
+```
+\newline
+
+**Figure 11: Venn diagram showing protein overlap between Gen 1 (G1) and XT Seer Proteograph results (SpLib-searched data).**
 
 ```{r PC3_Peptide_Count_Plot}
 #Create df for peptide bar plot
@@ -1554,7 +1582,30 @@ PC3_pepnum_plot
 ```
 \newline
  
-**Figure X: Peptide counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used.**
+**Figure 12: Peptide counts for PC3 samples across Proteograph and search method conditions. PG.MaxLFQ (normalized) data used. Gen1 and XT_SpLib have similar higher peptide counts compared to XT_LibFree and XT_timsLib. XT_timsLib has slightly higher peptide count than XT_LibFree.**
+
+```{r PC3_PeptideVenn_Plot}
+#Create Venn diagram for protein counts - Gen 1 vs XT (SpLib)
+PC3_pepvenn_df = PC3_peptide_df %>% mutate(Method = sub("(.*)_.$","\\1",Sample)) %>%
+                                    mutate(Protein_Peptide = paste(Protein.Ids, Precursor.Id, sep = "_")) %>%
+                                   filter(Method == "PC3_Old_Kit_SpLib" | Method == "PC3_XT_SpLib") %>%
+                                   dplyr::select(c("Method","Protein_Peptide")) %>%
+                                   unique() %>%
+                                   pivot_wider(names_from = Method, values_from = Protein_Peptide)
+
+PC3_pepvenn_list = list(PC3_Old_Kit_SpLib = unlist(PC3_pepvenn_df$PC3_Old_Kit_SpLib[1]),
+                         PC3_XT_SpLib = unlist(PC3_pepvenn_df$PC3_XT_SpLib[1]))
+PC3_pepvenn_plot = ggVennDiagram(PC3_pepvenn_list, color = "black", lwd = 0.8, lty = 1,
+                                  category.names = c("G1","XT")) +
+                      scale_fill_gradient(low = "#F4FAFE", high = "#4981BF") +
+                      labs(title = "Seer Proteograph Comparison: Gen 1 vs. XT SpLib") +
+                      theme(legend.position = "none")
+ggsave("~/Code/XT_Comparison/Plots/PC3_pepvenn_plot.png")
+PC3_pepvenn_plot
+```
+\newline
+
+**Figure 13: Venn diagram showing peptide overlap between Gen 1 (G1) and XT Seer Proteograph results (SpLib-searched data).**
 
 ### PC3 XT Search Method Comparison
 
@@ -1582,7 +1633,7 @@ PC3XT_feature_2RepMin_df = PC3_proteins %>%
 
 ```{r PC3_DataTransform}
 #Transform data to wide form for statistical test - using noSF data since only 2 replicates
-PC3_wide_df = PC3XT_feature_noSF_df %>% dplyr::group_by(Feature,Protein.Ids,Method) %>%
+PC3_wide_df = PC3XT_feature_2RepMin_df %>% dplyr::group_by(Feature,Protein.Ids,Method) %>%
                                             summarize(data = list(Log2_LFQ_Intensity), count = n(), .groups = "drop") %>%
                                             pivot_wider(names_from = Method, values_from = c(data,count))
 
@@ -1591,7 +1642,7 @@ PC3_wide_allLib_df = PC3_wide_df %>% filter(count_PC3_XT_SpLib>=1 & count_PC3_XT
 
 ```
 
-**Table X: Feature counts for PC3 XT samples in Seer Proteograph method comparison study (SpLib, timsLib, libfree). PG.MaxLFQ (normalized) data used.**
+**Table 5: Feature counts for PC3 XT samples in Seer Proteograph method comparison study (SpLib, timsLib, libfree). PG.MaxLFQ (normalized) data used.**
 
 ```{r PC3XT_Feature_Num_Table}
 #Create df for feature count table
@@ -1625,8 +1676,8 @@ PC3XT_featnum_plot_df = PC3XT_featnum_df %>% mutate(Method = sub("(.*)_.$","\\1"
 #Bar plot
 PC3XT_featnum_plot = ggplot(PC3XT_featnum_plot_df,
                             aes(fill=FilterType, y=Mean, x=Method)) + 
-  geom_bar(position = "dodge",stat="identity") + 
-  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", alpha=0.8, size=0.5, width = 0.4) +
+  geom_bar(position = "dodge",stat="identity", alpha = 0.85) + 
+  geom_errorbar(aes(ymin=Mean-SD, ymax=Mean+SD), position = position_dodge(0.9), stat = "identity",colour="black", size=0.5, width = 0.4) +
   theme_bw() +
   labs(x = "Method",
        y = "Mean Feature Count",
@@ -1638,7 +1689,7 @@ PC3XT_featnum_plot
 ```
 \newline
 
-**Figure X: Feature counts for PC3 XT samples across search method conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used.**
+**Figure 14: Feature counts for PC3 XT samples across search method conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used. LibFree method results in slightly more features than SpLib or timsLib, but given SD between replicates all are fairly close in feature count.**
 
 ```{r PC3XT_ANOVA_P1, include = FALSE}
 #Transform data for anova
@@ -1694,7 +1745,7 @@ ggsave("./Plots/PC3XT_ANOVATukeyHSD_LFQLog2Intensity_box_plot.png")
 
 \newline
 
-**Figure X: Combo box/violin plot for the PC3 XT search method comparison showing distributions of mean log2 LFQ intensities (averaged across 2 replicates per sample) separated on the x axis by search method. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (note: homogeneity of variance and normality assumptions are statistically invalid, so ANOVA is included here only as a visual aid to suggest possible pairwise differences). PG.MaxLFQ (normalized) data used.**
+**Figure 15: Combo box/violin plot for the PC3 XT search method comparison showing distributions of mean log2 LFQ intensities (averaged across 2 replicates per sample) separated on the x axis by search method. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (note: homogeneity of variance and normality assumptions are statistically invalid, so ANOVA is included here only as a visual aid to suggest possible pairwise differences). PG.MaxLFQ (normalized) data used. ANOVA suggests that the LibFree distribution is significantly different from the other two search methods (SpLib and timsLib).**
 
 ```{r PC3XT_CV}
 #Calculate CV per feature
@@ -1725,7 +1776,7 @@ PC3XT_CV_plot
 ```
 \newline
 
-**Figure X: Feature CV distributions for PC3 XT search method comparison study, grouped by search method. PG.MaxLFQ (normalized) data used. No obvious change in CVs with change in search method.**
+**Figure 16: Feature CV distributions for PC3 XT search method comparison study, grouped by search method. PG.MaxLFQ (normalized) data used. No obvious change in CVs with change in search method.**
 
 ```{r PC3XT_WiT}
 #Wilcox test - store pvalue and difference
@@ -1800,7 +1851,7 @@ WiT_boxDS_PC3XT_plot
 ```
 \newline
 
-**Figure X: Boxplot FC distributions of PC3 XT search method comparison data. Numbers at the top of each distribution represent median values. PG.MaxLFQ (normalized) data used.**
+**Figure 17: Boxplot FC distributions of PC3 XT search method comparison data. Numbers at the top of each distribution represent median values. PG.MaxLFQ (normalized) data used, features must appear in 2 replicates in both search method datasets being compared (no NAs). All comparisons are very similar, as expected. Observed deviations from FC=0 in this plot are likely due to differences in number of peptides detected per protein group (differences at protein rollup stage).**
 
 ```{r Plot_WiT_pval_PC3XT, fig.width=8, fig.height=4}
 #Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
@@ -1848,7 +1899,7 @@ ggsave("./Plots/fig_pval_PC3XT_Log2LFQIntensity.png", width = 8, height = 16)
 
 \newline
 
-**Figure X: P-value distributions for Wilcox tests performed on the PC3 XT search method comparison data. Log2-transformed data. PG.MaxLFQ (normalized) data used.**
+**Figure 18: P-value distributions for Wilcox tests performed on the PC3 XT search method comparison data. Log2-transformed data. PG.MaxLFQ (normalized) data used. Wilcox tests are valid.**
 
 ```{r Plot_WiT_volc_PC3XT, fig.width=8, fig.height=4}
 #Wilcox volcano Plot
@@ -1938,5 +1989,5 @@ ggsave("./Plots/fig_WiT_PC3XT_Log2LFQIntensity.png", width = 8, height = 16, uni
 
 \newline
 
-**Figure X: Volcano plots showing significantly differentially expressed proteins between PC3 XT samples in search method comparison experiment. Log2-transformed data. PG.MaxLFQ (normalized) data used.**
+**Figure 19: Volcano plots showing significantly differentially expressed proteins between PC3 XT samples in search method comparison experiment. Log2-transformed data. PG.MaxLFQ (normalized) data used. No significant differences between any of the search method datasets on the feature level.**
 

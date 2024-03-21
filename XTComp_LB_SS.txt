@@ -256,6 +256,34 @@ Human OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_la
   ** Added a proteins-in-common column in the PC3 Gen1 vs. XT section, fixed some MUS-naming in the PC3 section
 * Sent current Rmd and html versions to Matt to discuss next week/ask if any additional analysis is requested for these datasets
 
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+19MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Make these changes:
+  ** Murine peptide count switch to not use NP feature
+  ** Overlap btwn SpLib Gen1 vx XT PC3 protein counts - venn
+  ** FC distribution plot - change to use 2RepMin df
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+20MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Murine peptide count corrected
+  ** Counts not THAT much lower, but enough to make sense with the NP/feature element removed
+* PC3 XT FC distribution plot switched to now use 2RepMin df
+  ** No real change observed in plot/median values, but no NAs apparent in PC3XT WiT df.
+* Added venn diagram requested by Matt
+  ** https://r-charts.com/part-whole/ggvenndiagram/
+  ** Scaling of the circles doesn't appear to be possible with most packages, or recommended (many have had that feature removed)
+  
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+21MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Added result summary to each figure caption
+* Sent final version to Matt and JMay
+* Uploaded new versions of code and LB to GitHub repo
 
 
 
