@@ -1607,6 +1607,75 @@ PC3_pepvenn_plot
 
 **Figure 13: Venn diagram showing peptide overlap between Gen 1 (G1) and XT Seer Proteograph results (SpLib-searched data).**
 
+```{r PC3_DepthWaterfallPlot}
+#Import plasma data from Keshishian et al.
+MCP = read.table("~/Code/XT_Comparison/MCP_plasma.txt", sep = "\t", header = TRUE)
+
+#Isolate first Uniprot ID from Protein.Ids
+PC3_proteins$SinglePID = gsub(";.*$", "", PC3_proteins$Protein.Ids)
+
+#Combine the data with the Keshishian et. al MCP intensity data
+PC3_proteins_MCP = merge(PC3_proteins, MCP, by.x = "SinglePID", by.y = "Uniprot.accession.number", all.x = TRUE)
+
+#Log transform the Normalized.Mean.Intensity from the MCP data
+PC3_proteins_MCP$log_MCP_Intensity = log(PC3_proteins_MCP$Normalized.Mean.Intensity, 2)
+PC3_proteins_MCP$log_MCP_Intensity[PC3_proteins_MCP$log_MCP_Intensity == "-Inf"] = NA # replace missing with NA
+
+#Keep relevant columns
+PC3_proteins_MCP_unique = PC3_proteins_MCP %>% 
+  mutate(Feature = paste(NP, Protein.Ids, sep = "_")) %>%
+  select(Protein.Group, Genes, NP, Feature, Normalized.Mean.Intensity, Rank, log_MCP_Intensity) %>% 
+  unique()
+
+# add in Gene names
+# PC3_proteins_MCP_unique = merge(PC3_proteins_MCP_unique, protein_id_annotation %>% select(-Protein.Group), by = "feature", all.x = TRUE)
+
+#Collapse NP information
+PC3_proteins_MCP_PG = PC3_proteins_MCP_unique %>% 
+  select(Protein.Group, Genes, Normalized.Mean.Intensity, Rank, log_MCP_Intensity) %>% 
+  unique()
+
+#Create df for labeling the mean rank of proteins identified
+PC3_MCP_stats = PC3_proteins_MCP %>% 
+  select(Protein.Group, Rank, log_MCP_Intensity) %>% 
+  unique() %>% 
+  summarize(mean_rank = mean(Rank, na.rm = TRUE))
+
+PC3_MCP_stats_NP = PC3_proteins_MCP %>% 
+  select(Protein.Group, NP, Rank, log_MCP_Intensity) %>% 
+  unique() %>% 
+  group_by(NP) %>% 
+  summarize(mean_rank = mean(Rank, na.rm = TRUE))
+
+#Depth Plot
+PC3_depth_NP_plot = PC3_proteins_MCP_unique %>% 
+  ggplot(aes(x = Rank, y = log_MCP_Intensity, color = NP)) +
+  #geom_point(alpha = 0.2, stat = "unique", size = 2, aes(color = ID, text = Gene.names)) +
+  geom_point(alpha = 0.2, stat = "unique", size = 2) +
+  #scale_color_manual(values = c(NA, "#22c6c9")) +
+  geom_vline(data = PC3_MCP_stats_NP, linetype = 'dashed', aes(xintercept = mean_rank)) +
+  geom_text(aes(x = mean_rank,
+                y = 0, 
+                label = round(mean_rank),
+                hjust = -0.2,
+                vjust = 1,
+                size = 3),
+            data = PC3_MCP_stats_NP) +
+  theme_bw() + 
+  theme(axis.text = element_text(size = 13),
+        axis.title = element_text(size = 15, face = "bold"),
+        strip.text = element_text(size = 15, face = "bold"),
+        legend.position = "none") +
+  labs(title = "PC3 Data - Sampling Depth and Coverage",
+       y = "log2(Normalized Mean Intensity)") +
+  facet_wrap(~NP) #labeller = labeller(NP = np_labs)
+
+PC3_depth_NP_plot
+
+```
+
+**Figure 14: Waterfall plots (Keshishian et al. plasma data comparison) displaying depth of coverage per NP for all PC3 data. The XT NPs (A,B) are similar in MS proteomic coverage to the Gen 1 NPs (1-5).**
+
 ### PC3 XT Search Method Comparison
 
 ```{r PC3XT_SF}
@@ -1689,7 +1758,7 @@ PC3XT_featnum_plot
 ```
 \newline
 
-**Figure 14: Feature counts for PC3 XT samples across search method conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used. LibFree method results in slightly more features than SpLib or timsLib, but given SD between replicates all are fairly close in feature count.**
+**Figure 15: Feature counts for PC3 XT samples across search method conditions. Error bars represent +/- 1 SD from the mean, calculated across replicates. PG.MaxLFQ (normalized) data used. LibFree method results in slightly more features than SpLib or timsLib, but given SD between replicates all are fairly close in feature count.**
 
 ```{r PC3XT_ANOVA_P1, include = FALSE}
 #Transform data for anova
@@ -1745,7 +1814,7 @@ ggsave("./Plots/PC3XT_ANOVATukeyHSD_LFQLog2Intensity_box_plot.png")
 
 \newline
 
-**Figure 15: Combo box/violin plot for the PC3 XT search method comparison showing distributions of mean log2 LFQ intensities (averaged across 2 replicates per sample) separated on the x axis by search method. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (note: homogeneity of variance and normality assumptions are statistically invalid, so ANOVA is included here only as a visual aid to suggest possible pairwise differences). PG.MaxLFQ (normalized) data used. ANOVA suggests that the LibFree distribution is significantly different from the other two search methods (SpLib and timsLib).**
+**Figure 16: Combo box/violin plot for the PC3 XT search method comparison showing distributions of mean log2 LFQ intensities (averaged across 2 replicates per sample) separated on the x axis by search method. Number displayed on each boxplot is the mean for that intensity distribution. Letters shown at the top display significance categories determined by ANOVA TukeyHSD test (note: homogeneity of variance and normality assumptions are statistically invalid, so ANOVA is included here only as a visual aid to suggest possible pairwise differences). PG.MaxLFQ (normalized) data used. ANOVA suggests that the LibFree distribution is significantly different from the other two search methods (SpLib and timsLib).**
 
 ```{r PC3XT_CV}
 #Calculate CV per feature
@@ -1776,7 +1845,7 @@ PC3XT_CV_plot
 ```
 \newline
 
-**Figure 16: Feature CV distributions for PC3 XT search method comparison study, grouped by search method. PG.MaxLFQ (normalized) data used. No obvious change in CVs with change in search method.**
+**Figure 17: Feature CV distributions for PC3 XT search method comparison study, grouped by search method. PG.MaxLFQ (normalized) data used. No obvious change in CVs with change in search method.**
 
 ```{r PC3XT_WiT}
 #Wilcox test - store pvalue and difference
@@ -1851,7 +1920,7 @@ WiT_boxDS_PC3XT_plot
 ```
 \newline
 
-**Figure 17: Boxplot FC distributions of PC3 XT search method comparison data. Numbers at the top of each distribution represent median values. PG.MaxLFQ (normalized) data used, features must appear in 2 replicates in both search method datasets being compared (no NAs). All comparisons are very similar, as expected. Observed deviations from FC=0 in this plot are likely due to differences in number of peptides detected per protein group (differences at protein rollup stage).**
+**Figure 18: Boxplot FC distributions of PC3 XT search method comparison data. Numbers at the top of each distribution represent median values. PG.MaxLFQ (normalized) data used, features must appear in 2 replicates in both search method datasets being compared (no NAs). All comparisons are very similar, as expected. Observed deviations from FC=0 in this plot are likely due to differences in number of peptides detected per protein group (differences at protein rollup stage).**
 
 ```{r Plot_WiT_pval_PC3XT, fig.width=8, fig.height=4}
 #Plot WiT pvalue distribution - before multiple testing correction x axis = Wilcox Test Raw P-value, y axis = Aptamer Count
@@ -1899,7 +1968,7 @@ ggsave("./Plots/fig_pval_PC3XT_Log2LFQIntensity.png", width = 8, height = 16)
 
 \newline
 
-**Figure 18: P-value distributions for Wilcox tests performed on the PC3 XT search method comparison data. Log2-transformed data. PG.MaxLFQ (normalized) data used. Wilcox tests are valid.**
+**Figure 19: P-value distributions for Wilcox tests performed on the PC3 XT search method comparison data. Log2-transformed data. PG.MaxLFQ (normalized) data used. Wilcox tests are valid.**
 
 ```{r Plot_WiT_volc_PC3XT, fig.width=8, fig.height=4}
 #Wilcox volcano Plot
@@ -1989,5 +2058,5 @@ ggsave("./Plots/fig_WiT_PC3XT_Log2LFQIntensity.png", width = 8, height = 16, uni
 
 \newline
 
-**Figure 19: Volcano plots showing significantly differentially expressed proteins between PC3 XT samples in search method comparison experiment. Log2-transformed data. PG.MaxLFQ (normalized) data used. No significant differences between any of the search method datasets on the feature level.**
+**Figure 20: Volcano plots showing significantly differentially expressed proteins between PC3 XT samples in search method comparison experiment. Log2-transformed data. PG.MaxLFQ (normalized) data used. No significant differences between any of the search method datasets on the feature level.**
 

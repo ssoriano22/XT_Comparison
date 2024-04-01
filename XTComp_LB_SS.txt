@@ -284,6 +284,32 @@ Human OneDrive: https://ohsuitg-my.sharepoint.com/personal/sorianos_ohsu_edu/_la
 * Added result summary to each figure caption
 * Sent final version to Matt and JMay
 * Uploaded new versions of code and LB to GitHub repo
+* Waterfall plot for PC3s Gen1 v. XT? Matt 
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+27MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Matt sent code for waterfall/depth plot
+* Added code to XT_Comparison.Rmd, w/o OT (OpenTargets) sections
+* Need to ask Matt about final facet_wrap() line w/ "np_labs" that is never defined
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+29MAR2024
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* Don't need the np_labs/labelling part here - it was used to diguise the actual NP numeric names
+* A series of plots are generated...not quite sure what it's showing
+  ** Okay so they effectively show depth of coverage for each NP by comparing to a known dataset
+  ** Mean rank is shown in the text per plot
+* Saved current version to Github repo
+
+
+
+
+
+
+
 
 
 
